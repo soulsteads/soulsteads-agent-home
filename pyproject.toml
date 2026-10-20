@@ -12,6 +12,9 @@ license = "MIT"
 authors = [{name = "Soulsteads"}]
 dependencies = []
 
+[project.optional-dependencies]
+hermes = ["PyYAML>=6.0.2,<7"]
+
 [project.scripts]
 soulsteads = "soulsteads.cli:main"
 
