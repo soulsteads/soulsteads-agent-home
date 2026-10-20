@@ -24,6 +24,96 @@ class HermesImportTests(unittest.TestCase):
         (self.source / "config.yaml").write_text("{}\n")
         self.destination = self.root / "new-home"
 
+    def test_hindsight_configuration_is_detected_without_disclosing_details(self):
+        directory = self.source / "hindsight"
+        directory.mkdir(mode=0o700)
+        (directory / "config.json").write_text(
+            json.dumps(
+                {
+                    "mode": "local_external",
+                    "api_url": "https://memory.example.invalid",
+                    "bank_id": "synthetic-private-bank",
+                    "apiKey": "synthetic-private-key",
+                }
+            )
+        )
+        (self.source / "config.yaml").write_text("memory:\n  provider: hindsight\n")
+        report = inspect_source("helper", self.source)
+        self.assertEqual(report["hindsight"]["status"], "configuration-detected")
+        self.assertIn("hindsight/config.json", report["private_files"])
+        self.assertNotIn("synthetic-private", json.dumps(report))
+        self.assertNotIn("memory.example.invalid", json.dumps(report))
+        self.assertTrue(any("Hindsight" in item for item in report["unsupported"]))
+
+    @unittest.skipUnless(
+        sys.platform == "linux", "Atomic import publication requires Linux"
+    )
+    def test_hindsight_source_reference_is_private_and_unchanged(self):
+        directory = self.source / "hindsight"
+        directory.mkdir(mode=0o700)
+        raw = b'{"mode":"local_external","bank_id":"synthetic-bank","apiKey":"synthetic-key"}\n'
+        (directory / "config.json").write_bytes(raw)
+        import_profile("helper", self.source, path=self.destination, allow_partial=True)
+        target = self.destination / ".runtime/hermes/hindsight/config.json"
+        self.assertEqual(target.read_bytes(), raw)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(target.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((directory / "config.json").read_bytes(), raw)
+        self.assertNotIn(
+            "hindsight",
+            subprocess.check_output(
+                ["git", "-C", str(self.destination), "ls-files"], text=True
+            ),
+        )
+
+    @unittest.skipUnless(
+        sys.platform == "linux", "Atomic import publication requires Linux"
+    )
+    def test_import_converts_portable_skills_for_every_harness(self):
+        skill = self.skill("category/sample", "sample")
+        (skill / "SKILL.md").write_bytes(
+            b"---\nname: sample\ndescription: Synthetic portable skill\nplatforms: [linux, macos]\nversion: 1\n---\n# Instructions\nRead references/guide.md.\n"
+        )
+        (skill / "references").mkdir(mode=0o700)
+        (skill / "references/guide.md").write_bytes(b"Synthetic supporting bytes\r\n")
+        for runtime in ("opencode", "pi", "claude", "codex"):
+            with self.subTest(runtime=runtime):
+                target = self.root / runtime
+                import_profile("helper", self.source, path=target, runtime=runtime)
+                converted = (target / "skills/sample/SKILL.md").read_bytes()
+                self.assertIn(b'name: "sample"', converted)
+                self.assertNotIn(b"platforms:", converted)
+                self.assertNotIn(b"version:", converted)
+                self.assertTrue(
+                    converted.endswith(b"# Instructions\nRead references/guide.md.\n")
+                )
+                for alias in (".agents/skills", ".claude/skills"):
+                    self.assertEqual(
+                        (target / alias / "sample/SKILL.md").read_bytes(), converted
+                    )
+                    self.assertEqual(
+                        (target / alias / "sample/references/guide.md").read_bytes(),
+                        b"Synthetic supporting bytes\r\n",
+                    )
+                self.assertIn(
+                    "Native skill portability", (target / "AGENTS.md").read_text()
+                )
+
+    def test_hindsight_reference_rejects_invalid_or_ambiguous_json(self):
+        directory = self.source / "hindsight"
+        directory.mkdir(mode=0o700)
+        path = directory / "config.json"
+        for raw in (
+            b'{"apiKey":"sensitive-synthetic-value",}',
+            b'{"bank_id":"a","bank_id":"sensitive-synthetic-value"}',
+            b"[]",
+        ):
+            with self.subTest(raw=raw):
+                path.write_bytes(raw)
+                with self.assertRaises(ImportErrorSafe) as error:
+                    inspect_source("helper", self.source)
+                self.assertNotIn("sensitive-synthetic-value", str(error.exception))
+
     def test_inspection_is_read_only_and_metadata_only(self):
         before = sorted(self.root.rglob("*"))
         report = inspect_source("helper", self.source, runtime="pi")

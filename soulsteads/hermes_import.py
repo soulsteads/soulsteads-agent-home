@@ -368,6 +368,15 @@ def _skills(selected, config, snap, platform, unsupported):
                 "selected skill contains forbidden metadata or credential paths"
             )
         raw = snap.read(path)
+        if relative == Path("SKILL.md"):
+            from .skill_conversion import convert_skill
+
+            try:
+                raw = convert_skill(raw, name)
+            except ValueError:
+                raise ImportErrorSafe(
+                    "skill cannot be converted to portable Agent Skills metadata"
+                ) from None
         result[Path(name) / relative] = (
             raw,
             0o700 if snap.files[_absolute(path)][1][2] & 0o111 else 0o600,
@@ -425,6 +434,24 @@ def _plan(
         if raw is not None:
             private[".env"] = raw
     unsupported = []
+    hindsight_raw = snap.read(selected / "hindsight" / "config.json")
+    memory = config.get("memory")
+    hindsight_detected = hindsight_raw is not None or (
+        isinstance(memory, dict) and memory.get("provider") == "hindsight"
+    )
+    if hindsight_raw is not None:
+        try:
+            json.loads(hindsight_raw)
+        except (ValueError, RecursionError):
+            raise ImportErrorSafe(
+                "invalid Hindsight JSON; source details suppressed"
+            ) from None
+        _yaml(hindsight_raw)  # Also reject duplicate keys and excessive structure.
+        private["hindsight/config.json"] = hindsight_raw
+    if hindsight_detected:
+        unsupported.append(
+            "Hindsight configuration detected; native integration choice is required before automatic setup"
+        )
     if any(
         value not in (None, {}, [], "", False)
         for key, value in config.items()
@@ -443,6 +470,9 @@ def _plan(
         "skills": sorted({item.parts[0] for item in skills}),
         "unsupported": sorted(set(unsupported)),
         "private_files": sorted(private),
+        "hindsight": {
+            "status": "configuration-detected" if hindsight_detected else "not-detected"
+        },
         "activation_ready": False,
         "status": "inspected",
     }
@@ -561,6 +591,19 @@ def import_profile(
             # Preserve source bytes exactly except for the explicitly wrapped AGENTS.md.
             (home / filename).write_bytes(content.encode("utf-8"))
             (home / filename).chmod(0o600)
+        if skills:
+            instructions = home / "AGENTS.md"
+            instructions.write_text(
+                instructions.read_text(encoding="utf-8")
+                + "\n\n## Native skill portability\n\n"
+                "Skills are standard Agent Skills under skills/<name>/SKILL.md. "
+                "Use your harness's native skill loader or read that file, then load referenced files relative to its directory. "
+                "If a skill mentions Hermes skill_view or skill_manage, use native skill discovery and file editing instead. "
+                "Use native terminal, read, write, and search tools for equivalent operations. "
+                "Do not assume that a Hermes-specific tool or permission exists; report unsupported requirements rather than bypassing policy. "
+                "Skill scripts are not translated or executed by import.\n",
+                encoding="utf-8",
+            )
         for relative, (raw, mode) in skills.items():
             destination = home / "skills" / relative
             missing = []
@@ -577,8 +620,10 @@ def import_profile(
         (home / ".runtime").mkdir(mode=0o700)
         private_root.mkdir(mode=0o700)
         for filename, raw in private.items():
-            (private_root / filename).write_bytes(raw)
-            (private_root / filename).chmod(0o600)
+            destination = private_root / filename
+            destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+            destination.chmod(0o600)
         report.update(status="imported")
         private_receipt = {
             **report,
