@@ -27,6 +27,109 @@ class CLITests(unittest.TestCase):
         for command in ("create", "config", "commit", "revert", "log", "skill", "run"):
             self.assertIn(command, result.stdout)
 
+    @unittest.skipUnless(
+        sys.platform == "linux", "Atomic import publication requires Linux"
+    )
+    def test_import_hermes_inspect_apply_and_dry_run(self):
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as tmp:
+            source = Path(tmp) / "source"
+            source.mkdir(mode=0o700)
+            (source / "config.yaml").write_text("{}\n")
+            (source / "SOUL.md").write_text("# Synthetic imported identity\n")
+            destination = Path(tmp) / "imported"
+            arguments = (
+                "import-hermes",
+                "helper",
+                "--source",
+                str(source),
+                "--profile",
+                "default",
+                "--runtime",
+                "pi",
+                "--path",
+                str(destination),
+            )
+            inspected = self.invoke(*arguments)
+            self.assertEqual(inspected.returncode, 0, inspected.stderr)
+            self.assertEqual(json.loads(inspected.stdout)["status"], "inspected")
+            self.assertFalse(destination.exists())
+            applied = self.invoke(*arguments, "--apply")
+            self.assertEqual(applied.returncode, 0, applied.stderr)
+            self.assertEqual(json.loads(applied.stdout)["status"], "imported")
+            dry = self.invoke("run", str(destination), "--dry-run")
+            self.assertEqual(dry.returncode, 0, dry.stderr)
+            self.assertEqual(json.loads(dry.stdout)["argv"][0], "pi")
+            repeated = self.invoke(*arguments, "--apply")
+            self.assertEqual(repeated.returncode, 1)
+            self.assertNotIn("Traceback", repeated.stderr)
+
+    def test_without_yaml_ordinary_create_works_and_import_is_actionable(self):
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as tmp:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-S",
+                    "-m",
+                    "soulsteads",
+                    "create",
+                    "plain",
+                    "--runtime",
+                    "codex",
+                    "--path",
+                    str(Path(tmp) / "plain"),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            missing = subprocess.run(
+                [
+                    sys.executable,
+                    "-S",
+                    "-m",
+                    "soulsteads",
+                    "import-hermes",
+                    "helper",
+                    "--source",
+                    tmp,
+                    "--runtime",
+                    "pi",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(missing.returncode, 1, missing.stderr)
+            self.assertIn("soulsteads[hermes]", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+
+    def test_named_profile_with_underscore_is_selected_exactly(self):
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as tmp:
+            source = Path(tmp) / "source"
+            profile = source / "profiles" / "source_profile"
+            profile.mkdir(parents=True, mode=0o700)
+            profile.parent.chmod(0o700)
+            source.chmod(0o700)
+            (profile / "config.yaml").write_text("{}\n")
+            (profile / "SOUL.md").write_text("Synthetic named profile\n")
+            result = self.invoke(
+                "import-hermes",
+                "helper",
+                "--source",
+                str(source),
+                "--profile",
+                "source_profile",
+                "--runtime",
+                "codex",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report["profile"], "source_profile")
+            self.assertIn("SOUL.md", report["files"])
+
     def test_create_at_explicit_path_and_show_config(self):
         with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as tmp:
             home = Path(tmp) / "an agent"
