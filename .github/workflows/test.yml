@@ -12,7 +12,7 @@ jobs:
         python: ['3.11', '3.13']
     runs-on: ${{ matrix.os }}
     env:
-      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/soulsteads-pycache
+      PYTHONPYCACHEPREFIX: /tmp/soulsteads-pycache
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
