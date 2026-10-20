@@ -34,6 +34,37 @@ def parser():
     create.add_argument(
         "--no-skills", action="store_true", help="Omit bundled starter skills"
     )
+    importer = commands.add_parser(
+        "import-hermes", help="Inspect or import a local Hermes profile into a new home"
+    )
+    importer.add_argument("name")
+    importer.add_argument(
+        "--source", type=Path, required=True, help="Parent Hermes home"
+    )
+    importer.add_argument("--profile", default="default")
+    importer.add_argument("--runtime", required=True, choices=RUNTIMES)
+    importer.add_argument("--path", type=Path)
+    importer.add_argument(
+        "--platform", default="cli", help="Source skill-filter platform"
+    )
+    importer.add_argument(
+        "--workspace", type=Path, help="Explicit instruction-file fallback"
+    )
+    importer.add_argument(
+        "--include-secrets",
+        action="store_true",
+        help="Preserve .env privately; never load it",
+    )
+    importer.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Acknowledge reported manual migration work",
+    )
+    importer.add_argument(
+        "--apply",
+        action="store_true",
+        help="Create a new home; default is inspection only",
+    )
     config = commands.add_parser(
         "config", help="Show configuration or change the runtime"
     )
@@ -90,7 +121,31 @@ def main(argv=None):
     from . import core
 
     try:
-        if args.command == "create":
+        if args.command == "import-hermes":
+            from .hermes_import import import_profile, inspect_source
+
+            options = {
+                "workspace": args.workspace,
+                "platform": args.platform,
+                "include_secrets": args.include_secrets,
+            }
+            if args.apply:
+                report = import_profile(
+                    args.name,
+                    args.source,
+                    args.profile,
+                    args.runtime,
+                    path=args.path,
+                    base=args.agents_dir,
+                    allow_partial=args.allow_partial,
+                    **options,
+                )
+            else:
+                report = inspect_source(
+                    args.name, args.source, args.profile, args.runtime, **options
+                )
+            print(json.dumps(report, indent=2))
+        elif args.command == "create":
             print(
                 core.create(
                     args.name,

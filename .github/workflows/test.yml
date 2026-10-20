@@ -18,6 +18,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - run: python -m pip install ".[hermes]"
       - run: |
           test -f tests/test_cli.py
           test -f tests/test_core.py

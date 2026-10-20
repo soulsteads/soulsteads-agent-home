@@ -4,7 +4,8 @@ A small `soulsteads` CLI for creating and maintaining a portable agent home.
 Choose OpenCode, pi, Claude Code, or Codex; keep the agent's identity,
 instructions, memory, skills, and runtime configuration in a local Git repository.
 
-Python 3.11+ and Git are required. The CLI has no runtime Python dependencies.
+Python 3.11+ and Git are required. Ordinary commands have no runtime Python
+dependencies. Direct Hermes import uses the optional `hermes` extra (PyYAML).
 Install and authenticate your chosen agent runtime separately.
 
 ## Install
@@ -47,6 +48,32 @@ files in installed skills retain owner-only execute permission). No Git remote i
 Generated home commits use a repository-local `Soulsteads <soulsteads@localhost>`
 identity, never modify your global Git configuration, and do not run Git hooks.
 This identity is configurable through normal repo-local Git commands.
+
+## Import from Hermes
+
+Install the optional importer, then inspect an explicitly selected source profile:
+
+```sh
+uv tool install '.[hermes]'
+soulsteads import-hermes helper --source "$HOME/.hermes" --profile helper \
+  --runtime opencode --path "$HOME/agents/helper"
+```
+
+Inspection is read-only. Add `--apply` only after reviewing its report; a fresh
+private Home is created without starting a runtime or transferring live messaging
+ownership. Supported identity files, memory, and enabled local skills are imported;
+nonportable settings and unsupported discovery are reported, not silently
+translated. Incomplete imports require `--allow-partial` acknowledgement.
+
+The source configuration (which may contain secrets) and receipt remain in ignored
+private storage. Separate credential files are excluded by default; an explicit
+`--include-secrets` copies only
+the selected profile's `.env` as an inactive private reference, never OAuth login
+or live credential pools. Identity/skills may enter the new Home's local Git
+history, so inspect them for secrets before applying or sharing.
+
+See the [Hermes import guide](docs/hermes-import.md) for source selection, workspace
+instructions, skill filters, safety checks, and the separate activation boundary.
 
 ## Configure and launch
 
