@@ -22,6 +22,9 @@ acknowledgement, not silent translation or permission broadening.
 
 - Explicit source/profile selection; no active-profile or missing-profile fallback.
 - Supported identity/memory documents and enabled local skill selection.
+- Standard Agent Skills conversion with native discovery aliases, unchanged body
+  and supporting assets, and explicit native-tool portability guidance.
+- Profile-local Hindsight configuration detection and private reference capture.
 - Private ignored source configuration, import receipt, and opt-in `.env` reference.
 - Metadata-only public reports; absolute provenance paths stay in the private receipt.
 - Strict YAML parsing, bounded no-follow reads, source-change detection and absent
@@ -40,6 +43,14 @@ then publish through a feature-branch PR and verify the remote revision.
 
 See [the import guide](docs/hermes-import.md) for exact commands and limitations.
 This plan is not authorization to import a real private profile or activate it.
+
+## Remaining owner decision
+
+Automatic Hindsight setup is requested but not complete. Choose the maintained
+coding-agents dependency/native hooks versus memory-bank tool access only before
+adding dependencies or changing durable memory behavior. Existing global install
+commands are not safe project-local import steps. Until scoped wiring is qualified,
+Hindsight is an explicit reported omission, never an activation-ready claim.
 
 ## Non-goals
 

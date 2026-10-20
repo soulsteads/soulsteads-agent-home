@@ -87,16 +87,51 @@ importing that surface instead of the default `cli` selection.
 
 - Global `skills.disabled` and the selected `skills.platform_disabled` are combined.
 - Hermes's essential `hermes-agent` exception remains eligible.
-- Skills need valid frontmatter with a supported canonical name and description.
+- Selected skills are converted to standard [Agent Skills](https://agentskills.io/specification)
+  frontmatter. Names must be lowercase hyphenated identifiers of at most 64
+  characters; descriptions must be nonempty and at most 1024 characters. Hermes
+  discovery fields are consumed for selection, then removed from the output.
+  Supported license, compatibility, and string-valued metadata are retained;
+  Hermes-specific metadata is removed.
 - Disabled nested skills must not reappear as assets of an enabled parent.
 - Unsupported discovery tiers, including external or conditional sources, are
   reported rather than silently treated as a complete effective catalogue.
+- Markdown bodies and supporting assets keep their original bytes; only SKILL.md
+  frontmatter changes. The shared `.agents/skills` and `.claude/skills` aliases
+  expose the converted catalogue to all four supported harnesses.
+- Imported Home instructions explain native skill loading and native-tool
+  equivalents for Hermes skill/file/terminal tool references. This is guidance,
+  not a rewrite of arbitrary script or tool APIs.
 - Skill scripts are copied as files only; no script or installation hook runs.
 
 This is file-format compatibility, not proof that a skill works in the selected
 runtime. Instructions can refer to Hermes-only tools and policies. Review them
 before running the imported agent. Runtime-global skills can still be discovered;
 a local catalogue is not a cross-runtime authorization sandbox.
+
+## Hindsight integration: pending setup choice
+
+The importer detects `memory.provider: hindsight` and profile-local
+`hindsight/config.json`. It preserves that JSON unchanged under ignored private
+`.runtime/hermes/hindsight/config.json`, where keys and endpoint/bank details do
+not enter Git or public reports. Malformed JSON and duplicate keys are refused;
+source changes and optional-file appearance remain part of snapshot verification.
+The importer does not inspect shared `~/.hindsight` state or the ambient process
+environment.
+
+**Automatic native Hindsight setup is not implemented in this candidate.** The
+report identifies it as required manual work rather than claiming memory is ready.
+`--allow-partial` acknowledges this omission; it does not install or enable hooks.
+
+The maintained [Hindsight coding-agents integration](https://github.com/vectorize-io/hindsight/tree/main/hindsight-integrations/coding-agents)
+supports the target harnesses, but adds a JavaScript dependency and hooks that can
+retain conversations and inject memory. Its general installer also changes
+user-global harness settings. A scoped importer integration must preserve the
+source profile's supported memory behavior without running that global installer
+or enabling additional ingestion. Bank access alone through MCP is a narrower
+alternative; it does not preserve automatic memory behavior. That choice remains
+an owner decision before implementation. No Hindsight server or memory bank is
+contacted or modified during import.
 
 ## Apply only after review
 
