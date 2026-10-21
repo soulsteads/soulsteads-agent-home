@@ -452,15 +452,17 @@ def _plan(
         unsupported.append(
             "Hindsight configuration detected; native integration choice is required before automatic setup"
         )
-    if any(
-        value not in (None, {}, [], "", False)
-        for key, value in config.items()
-        if key != "skills"
-    ):
-        unsupported.append(
-            "Hermes runtime, model, tools, permissions and service settings require manual review"
-        )
     skills = _skills(selected, config, snap, platform, unsupported)
+    from .compatibility import report as compatibility_report
+
+    compatibility, manual = compatibility_report(
+        documents=documents,
+        skills=skills,
+        config=config,
+        hindsight_detected=hindsight_detected,
+    )
+    if manual:
+        unsupported.append("Hermes configuration requires manual review")
     report = {
         "name": name,
         "profile": profile,
@@ -473,6 +475,7 @@ def _plan(
         "hindsight": {
             "status": "configuration-detected" if hindsight_detected else "not-detected"
         },
+        "compatibility": compatibility,
         "activation_ready": False,
         "status": "inspected",
     }
