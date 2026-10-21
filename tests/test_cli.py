@@ -142,6 +142,28 @@ class CLITests(unittest.TestCase):
             self.assertEqual(config.returncode, 0, config.stderr)
             self.assertEqual(json.loads(config.stdout)["runtime"], "opencode")
 
+    def test_commit_without_message_generates_local_summary(self):
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as tmp:
+            home = Path(tmp) / "agent"
+            created = self.invoke(
+                "create", "helper", "--runtime", "opencode", "--path", str(home)
+            )
+            self.assertEqual(created.returncode, 0, created.stderr)
+            (home / "USER.md").write_text("Private synthetic contents\n")
+            (home / ".env").write_text("SYNTHETIC_SECRET=never-stage\n")
+            result = self.invoke("commit", str(home))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subject = subprocess.check_output(
+                ["git", "-C", str(home), "log", "-1", "--format=%s"], text=True
+            ).strip()
+            self.assertEqual(subject, "Update agent home (1 file)")
+            self.assertNotIn("Private synthetic", subject)
+            changed = subprocess.check_output(
+                ["git", "-C", str(home), "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+                text=True,
+            ).splitlines()
+            self.assertEqual(changed, ["USER.md"])
+
     def test_commit_and_log(self):
         with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as tmp:
             home = Path(tmp) / "agent"

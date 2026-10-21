@@ -149,10 +149,18 @@ See [runtime adapters and upstream references](https://github.com/soulsteads/sou
 ## Track and restore
 
 ```sh
+soulsteads commit helper  # Automatically generate a local commit message
+# Or supply your own:
 soulsteads commit helper -m "Personalize the agent"
 soulsteads log helper
 soulsteads revert helper <commit-id>
 ```
+
+Omit `-m` to generate a message such as `Update agent home (2 files)` from the
+number of changed files selected for the commit. This needs no AI service or
+network access and does not copy file contents or filenames into the message.
+Explicit messages are preserved; an explicitly blank message is rejected.
+No changes means no new commit. The same safe-file allowlist applies in both modes.
 
 Restore accepts a hexadecimal commit ID from this home's ancestor history and
 creates a **new commit** with the old tracked contents. It does not reset history,

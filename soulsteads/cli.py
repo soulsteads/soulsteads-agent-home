@@ -76,7 +76,9 @@ def parser():
         "commit", help="Commit agent configuration and skills locally"
     )
     commit.add_argument("agent")
-    commit.add_argument("-m", "--message", required=True)
+    commit.add_argument(
+        "-m", "--message", help="Commit message (default: local changed-file count)"
+    )
     log = commands.add_parser("log", help="Show local agent file history")
     log.add_argument("agent")
     revert = commands.add_parser(
