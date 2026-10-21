@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +14,88 @@ class VerifyTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name).resolve() / "home"
         core.create("helper", "opencode", path=self.home, with_skills=False)
+
+    def test_create_and_import_verify_under_group_writable_umask(self):
+        from soulsteads.hermes_import import import_profile
+        from soulsteads.runtimes import RUNTIMES
+        from soulsteads.verification import verify_home
+
+        root = Path(self.tmp.name).resolve()
+        source = root / "source"
+        source.mkdir(mode=0o700)
+        (source / "config.yaml").write_text("{}\n")
+        for mask in (0o002, 0o022):
+            for runtime in RUNTIMES:
+                for operation in ("create", "import"):
+                    if operation == "import" and sys.platform != "linux":
+                        continue  # Atomic import publication requires Linux renameat2.
+                    with self.subTest(
+                        mask=oct(mask), runtime=runtime, operation=operation
+                    ):
+                        home = root / f"{operation}-{runtime}-{mask}"
+                        previous = os.umask(mask)
+                        try:
+                            if operation == "create":
+                                core.create(
+                                    "helper", runtime, path=home, with_skills=False
+                                )
+                            else:
+                                import_profile(
+                                    "helper", source, runtime=runtime, path=home
+                                )
+                            self.assertEqual(os.umask(mask), mask)
+                        finally:
+                            os.umask(previous)
+                        before = {
+                            p.relative_to(home): (
+                                p.lstat(),
+                                p.read_bytes() if p.is_file() else None,
+                            )
+                            for p in (home, *home.rglob("*"))
+                        }
+                        report = verify_home(home)
+                        self.assertEqual(report["status"], "passed", report)
+                        self.assertFalse(report["activation_ready"])
+                        self.assertEqual((home / ".git").stat().st_mode & 0o777, 0o700)
+                        after = {
+                            p.relative_to(home): (
+                                p.lstat(),
+                                p.read_bytes() if p.is_file() else None,
+                            )
+                            for p in (home, *home.rglob("*"))
+                        }
+                        # Reads may update atime; verification must not alter bytes,
+                        # permissions, ownership, identities, or modification times.
+                        for path, (info, data) in before.items():
+                            current, current_data = after[path]
+                            self.assertEqual(data, current_data)
+                            self.assertEqual(
+                                (
+                                    info.st_mode,
+                                    info.st_uid,
+                                    info.st_gid,
+                                    info.st_ino,
+                                    info.st_mtime_ns,
+                                ),
+                                (
+                                    current.st_mode,
+                                    current.st_uid,
+                                    current.st_gid,
+                                    current.st_ino,
+                                    current.st_mtime_ns,
+                                ),
+                            )
+                        self.assertEqual(before.keys(), after.keys())
+
+    def test_unsafe_git_root_is_rejected_without_permission_repair(self):
+        from soulsteads.verification import verify_home
+
+        git = self.home / ".git"
+        git.chmod(0o775)
+        report = verify_home(self.home)
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["findings"][0]["id"], "home-safety")
+        self.assertEqual(git.stat().st_mode & 0o777, 0o775)
 
     def test_offline_verification_is_available_and_not_activation_proof(self):
         self.assertIn("verify", cli.parser().format_help())
@@ -49,7 +133,8 @@ class VerifyTests(unittest.TestCase):
         from soulsteads.verification import verify_home
 
         private = self.home / ".runtime/hermes"
-        private.mkdir(parents=True)
+        private.parent.mkdir(mode=0o700)
+        private.mkdir(mode=0o700)
         (private / "config.yaml").write_text("secret: synthetic-secret")
         core._git(self.home, "add", "-f", ".runtime/hermes/config.yaml")
         report = verify_home(self.home)
@@ -70,7 +155,7 @@ class VerifyTests(unittest.TestCase):
         from soulsteads.verification import verify_home
 
         skill = self.home / "skills/private-person"
-        skill.mkdir()
+        skill.mkdir(mode=0o700)
         (skill / "SKILL.md").write_text("---\nname: other\ndescription: example\n---\n")
         report = verify_home(self.home)
         self.assertEqual(report["status"], "failed")
@@ -80,7 +165,7 @@ class VerifyTests(unittest.TestCase):
         from soulsteads.verification import verify_home
 
         skill = self.home / "skills/helper"
-        skill.mkdir()
+        skill.mkdir(mode=0o700)
         (skill / "SKILL.md").write_text(
             "---\nname: helper\ndescription: example\n---\nCall skill_view to read a skill.\n"
         )
@@ -94,7 +179,8 @@ class VerifyTests(unittest.TestCase):
         (self.home / ".gitignore").write_text(".runtime/hermes/config.yaml\n")
         (self.home / ".env").write_text("SYNTHETIC=only\n")
         receipt = self.home / ".runtime/hermes/IMPORT-RECEIPT.json"
-        receipt.parent.mkdir(parents=True)
+        receipt.parent.parent.mkdir(mode=0o700)
+        receipt.parent.mkdir(mode=0o700)
         receipt.write_text(json.dumps({"status": "imported", "unsupported": []}))
         report = verify_home(self.home)
         self.assertEqual(report["status"], "failed")
@@ -103,6 +189,8 @@ class VerifyTests(unittest.TestCase):
 
     def test_selectively_unignored_nested_private_files_fail(self):
         from soulsteads.verification import verify_home
+
+        (self.home / ".runtime").mkdir(mode=0o700)
 
         for relative in (
             ".runtime/hermes/IMPORT-RECEIPT.json",
@@ -115,7 +203,7 @@ class VerifyTests(unittest.TestCase):
                     ".runtime/hermes/config.yaml\n!" + relative + "\n"
                 )
                 path = self.home / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
+                path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 if relative.endswith("IMPORT-RECEIPT.json"):
                     path.write_text(
                         json.dumps({"status": "imported", "unsupported": []})
@@ -139,10 +227,11 @@ class VerifyTests(unittest.TestCase):
 
         (self.home / ".env").write_text("SYNTHETIC=only\n")
         receipt = self.home / ".runtime/hermes/IMPORT-RECEIPT.json"
-        receipt.parent.mkdir(parents=True)
+        receipt.parent.parent.mkdir(mode=0o700)
+        receipt.parent.mkdir(mode=0o700)
         receipt.write_text(json.dumps({"status": "imported", "unsupported": []}))
         config = receipt.parent / "hindsight/config.json"
-        config.parent.mkdir()
+        config.parent.mkdir(mode=0o700)
         config.write_text("SYNTHETIC-PRIVATE-FIXTURE")
         report = verify_home(self.home)
         self.assertEqual(report["status"], "passed")
@@ -181,7 +270,8 @@ class VerifyTests(unittest.TestCase):
         from soulsteads.verification import verify_home
 
         private = self.home / ".runtime/hermes"
-        private.mkdir(parents=True)
+        private.parent.mkdir(mode=0o700)
+        private.mkdir(mode=0o700)
         receipt = private / "IMPORT-RECEIPT.json"
         receipt.write_text(
             json.dumps(
@@ -199,7 +289,7 @@ class VerifyTests(unittest.TestCase):
     def test_verification_requires_skill_documents(self):
         from soulsteads.verification import verify_home
 
-        (self.home / "skills/incomplete").mkdir()
+        (self.home / "skills/incomplete").mkdir(mode=0o700)
         self.assertEqual(verify_home(self.home)["status"], "failed")
 
     def test_without_yaml_skill_validation_is_explicitly_incomplete(self):
@@ -207,7 +297,7 @@ class VerifyTests(unittest.TestCase):
         import sys
 
         skill = self.home / "skills/helper"
-        skill.mkdir()
+        skill.mkdir(mode=0o700)
         (skill / "SKILL.md").write_text(
             "---\nname: helper\ndescription: example\n---\n"
         )
@@ -237,7 +327,7 @@ class VerifyTests(unittest.TestCase):
 
         def replaced(snapshot):
             self.home.rename(self.home.with_name("retained"))
-            self.home.mkdir()
+            self.home.mkdir(mode=0o700)
             original(snapshot)
 
         with patch.object(Snapshot, "verify", replaced):

@@ -464,6 +464,9 @@ def create(
             destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             destination.parent.chmod(0o700)
             _write_private(destination, text)
+        # Git inherits the caller's umask; create its root privately so newly
+        # created and imported Homes satisfy the verifier without target repair.
+        _private_dir(target / ".git")
         _git(target, "init", "--quiet")
         _git(target, "config", "user.name", "Soulsteads")
         _git(target, "config", "user.email", "soulsteads@localhost")
