@@ -10,7 +10,7 @@ class VerifyTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.home = Path(self.tmp.name) / "home"
+        self.home = Path(self.tmp.name).resolve() / "home"
         core.create("helper", "opencode", path=self.home, with_skills=False)
 
     def test_offline_verification_is_available_and_not_activation_proof(self):

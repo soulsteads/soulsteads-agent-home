@@ -14,10 +14,10 @@ class CompatibilityTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.source = Path(self.tmp.name) / "source"
+        self.source = Path(self.tmp.name).resolve() / "source"
         self.source.mkdir(mode=0o700)
         (self.source / "config.yaml").write_text("{}\n")
-        self.destination = Path(self.tmp.name) / "home"
+        self.destination = Path(self.tmp.name).resolve() / "home"
 
     def findings(self, config):
         (self.source / "config.yaml").write_text(config)
