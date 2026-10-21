@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Portable, locally versioned homes for coding agents"
 requires-python = ">=3.11"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 authors = [{name = "Soulsteads"}]
 dependencies = []
 
