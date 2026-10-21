@@ -133,6 +133,20 @@ traversal are rejected. No code is executed and no network fetch is performed.
 Inspect third-party instructions yourself before installing: a skill can direct
 an agent to perform harmful actions even when its files contain no executable code.
 
+## Optional: reach your agent from chat
+
+[Soulsteads Agent Messaging](https://github.com/soulsteads/soulsteads-agent-messaging)
+is a separate project that connects coding agents to chat apps, so you can send
+requests and receive replies without staying at a terminal. Agent Home focuses
+on the agent's portable identity, instructions, memory, skills, and configuration;
+Agent Messaging provides the chat connection.
+
+The projects are independent: neither requires the other. You can use Agent Home
+with your chosen runtime directly, or use Agent Messaging without an Agent Home.
+If you choose to use both, follow Agent Messaging's setup guide for its supported
+configuration; installing Agent Home does not install or configure messaging,
+transfer credentials, or start a messaging service.
+
 ## Development
 
 ```sh
