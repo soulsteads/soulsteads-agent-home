@@ -143,3 +143,8 @@ uv build --out-dir /tmp/soulsteads-dist
 
 Tests create disposable homes and real local Git repositories. They do not invoke
 paid model calls, copy private agents, or mutate user-level runtime configuration.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
+See [NOTICE](NOTICE) for copyright attribution.
