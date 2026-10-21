@@ -57,6 +57,27 @@ workspace. It does not execute Hermes, plugins, skill scripts, or instructions
 found in those files. It does not copy a workspace, Vault, session database,
 conversation history, or scheduler state recursively.
 
+### Compatibility findings
+
+Inspection and import reports include an additive `compatibility` object with
+`schema_version: 1` and fixed-ID `findings`. Each finding has `id`, `category`,
+`status`, `consequence`, and `next_action`. Status distinguishes selected source
+files, template defaults, disabled configuration, required manual work, and state
+that is deliberately not transferred. These describe the import plan, not proof
+that the destination runtime can use the imported files.
+
+MCP, model/provider, tools, permissions, external memory, other runtime settings,
+and unknown configuration are classified separately. Findings never echo arbitrary
+configuration keys or values, endpoints, credentials, or document contents.
+Existing top-level report fields remain available; meaningful untranslated settings
+still require explicit `--allow-partial` acknowledgement. Names in the existing
+profile/skill lists remain potentially sensitive: reports are not public fixtures.
+
+`not_transferred` findings cover sessions, schedules, messaging ownership, and
+OAuth credentials whether or not those states exist. They describe boundaries;
+they do not mean the importer inspected those stores. No new connection,
+permission, scheduled job, or external memory behavior is enabled.
+
 ### Workspace instructions
 
 If identity instructions live in a workspace rather than the profile, explicitly
@@ -183,6 +204,48 @@ tracked. This tool is **not a secret scanner**: secrets embedded in Markdown or
 skill content can therefore enter local history. Inspect the source and report
 before applying, and never publish an imported Home without a separate privacy
 review. Ignoring a file does not encrypt it.
+
+## Offline verification
+
+```sh
+soulsteads verify /path/to/new-home
+```
+
+This read-only command requires POSIX file-safety primitives and an existing
+standalone Home. It checks the manifest, required identity documents, basic
+JSON/TOML adapter syntax, skill metadata and discovery aliases, the original
+import receipt's outstanding manual work, and whether private paths are ignored
+and absent from the Git index. Source files are size-bounded and rechecked before
+returning success; unsafe links, hardlinks, special files, and changed bindings
+are refused. It does not repair files or relax permissions.
+
+JSON output contains fixed findings without Home/profile/skill names, paths,
+source text, or configuration values. `scope` is `offline-structural` and
+`activation_ready` is always `false`. `status` is:
+
+- `passed`: the implemented structural checks passed.
+- `needs-review`: metadata parsing or portability/manual migration work remains.
+- `failed`: unsafe, missing, or malformed required structure was found.
+
+Exit status is `1` for failed checks and `0` for either other status; automation
+must inspect the JSON status to distinguish `passed` from `needs-review`.
+Skill YAML validation uses the optional `hermes` extra. Without it, ordinary Home
+checks still run and skills are marked `needs-review`, not validated with a
+partial YAML parser. Skill portability warnings look for a limited set of
+Hermes-specific tool names; they are not an exhaustive dependency analysis.
+
+The command runs only local Git inspection commands (with hooks and filesystem
+monitor commands disabled). It never launches a runtime, executes a skill,
+contacts MCP/memory/model services, or tests credentials. Valid adapter syntax is
+not native configuration validation or proof of actual instruction loading.
+Private-path checks are not a secret-content scan or Git history audit. A receipt
+records the original import's omissions; it is not a live integration-health check.
+
+A live profile can legitimately contain shared hardlinked skills or files larger
+than the importer's limits. Such a profile currently fails import safety checks,
+even with `--allow-partial`; neither import nor verification silently filters it
+or declares a successful full migration. Keep the source untouched and resolve
+that compatibility boundary explicitly before claiming end-to-end migration.
 
 ## Verify before running or connecting Messaging
 

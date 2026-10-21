@@ -65,6 +65,10 @@ def parser():
         action="store_true",
         help="Create a new home; default is inspection only",
     )
+    verify = commands.add_parser(
+        "verify", help="Check a Home offline without launching its runtime"
+    )
+    verify.add_argument("agent")
     config = commands.add_parser(
         "config", help="Show configuration or change the runtime"
     )
@@ -147,6 +151,12 @@ def main(argv=None):
                     args.name, args.source, args.profile, args.runtime, **options
                 )
             print(json.dumps(report, indent=2))
+        elif args.command == "verify":
+            from .verification import verify_home
+
+            report = verify_home(agent_path(args.agent, args.agents_dir))
+            print(json.dumps(report, indent=2))
+            return 1 if report["status"] == "failed" else 0
         elif args.command == "create":
             print(
                 core.create(

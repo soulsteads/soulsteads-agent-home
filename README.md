@@ -118,6 +118,9 @@ history, so inspect them for secrets before applying or sharing.
 
 See the [Hermes import guide](docs/hermes-import.md) for source selection, workspace
 instructions, skill filters, safety checks, and the separate activation boundary.
+Inspect its compatibility findings before applying, then run
+`soulsteads verify /path/to/new-home` for offline structural checks. Verification
+never launches an agent and does not establish that migration is activation-ready.
 
 ---
 
