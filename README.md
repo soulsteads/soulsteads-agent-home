@@ -1,14 +1,56 @@
-# Soulsteads
+<p align="center">
+  <img src="assets/banner.svg" alt="Soulsteads Agent Home" width="720" />
+</p>
 
-A small `soulsteads` CLI for creating and maintaining a portable agent home.
-Choose OpenCode, pi, Claude Code, or Codex; keep the agent's identity,
-instructions, memory, skills, and runtime configuration in a local Git repository.
+<p align="center">
+  <strong>Your agent. Your files. No BS.</strong><br/>
+  A portable home for your coding agent’s identity, instructions, memory, and skills.
+</p>
 
-Python 3.11+ and Git are required. Ordinary commands have no runtime Python
-dependencies. Direct Hermes import uses the optional `hermes` extra (PyYAML).
-Install and authenticate your chosen agent runtime separately.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License: Apache 2.0" /></a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-informational?logo=python" alt="Python 3.11 or newer" />
+  <img src="https://img.shields.io/badge/storage-local%20Git-38bdf8" alt="Storage: local Git" />
+</p>
 
-## Install
+<p align="center">
+  <a href="#get-started">Get started</a> ·
+  <a href="#import-from-hermes">Import from Hermes</a> ·
+  <a href="docs/runtimes.md">Runtime guide</a> ·
+  <a href="#know-before-you-start">Safety and privacy</a>
+</p>
+
+---
+
+## Why Agent Home?
+
+Give your agent a home you can read, edit, and version—not another service to run.
+The small `soulsteads` CLI keeps its identity, instructions, local memory, skills,
+and project-level runtime configuration together in a local Git repository.
+
+- **Your files, on your machine.** Plain Markdown and local configuration, not a hosted account.
+- **Choose your runtime.** OpenCode, pi, Claude Code, or Codex. Install and authenticate it separately.
+- **Keep a history.** Commit changes and restore earlier tracked contents without rewriting history.
+- **Start small.** Python 3.11+ and Git; ordinary CLI commands have no runtime Python dependencies.
+- **Bring selected Hermes files.** Inspect a profile before importing with the optional `hermes` extra.
+
+Agent Home manages the home—not models, gateways, scheduled jobs, or chat accounts.
+It does not install your runtime or change its global configuration.
+
+## Get started
+
+Install the CLI, create a home, and preview its launch command:
+
+```sh
+uv tool install git+https://github.com/soulsteads/soulsteads-agent-home.git
+soulsteads create helper --runtime opencode
+soulsteads run helper --dry-run
+```
+
+Choose `pi`, `claude`, or `codex` instead if that is the runtime you use.
+Once your runtime is installed and authenticated, launch it with `soulsteads run helper`.
+
+### Other installation options
 
 ```sh
 uv tool install .
@@ -31,6 +73,8 @@ The default destination is `~/.soulsteads/agents/<name>`.
 Use `--agents-dir /another/parent` **before** the subcommand to change this parent.
 Creation refuses existing destinations and locations inside another Git repository.
 It never imports existing personal agent files or reads credentials.
+
+### What’s in a home?
 
 Each home has:
 
@@ -78,6 +122,8 @@ Inspect its compatibility findings before applying, then run
 `soulsteads verify /path/to/new-home` for offline structural checks. Verification
 never launches an agent and does not establish that migration is activation-ready.
 
+---
+
 ## Configure and launch
 
 ```sh
@@ -106,10 +152,18 @@ See [runtime adapters and upstream references](https://github.com/soulsteads/sou
 ## Track and restore
 
 ```sh
+soulsteads commit helper  # Automatically generate a local commit message
+# Or supply your own:
 soulsteads commit helper -m "Personalize the agent"
 soulsteads log helper
 soulsteads revert helper <commit-id>
 ```
+
+Omit `-m` to generate a message such as `Update agent home (2 files)` from the
+number of changed files selected for the commit. This needs no AI service or
+network access and does not copy file contents or filenames into the message.
+Explicit messages are preserved; an explicitly blank message is rejected.
+No changes means no new commit. The same safe-file allowlist applies in both modes.
 
 Restore accepts a hexadecimal commit ID from this home's ancestor history and
 creates a **new commit** with the old tracked contents. It does not reset history,
@@ -149,6 +203,26 @@ with your chosen runtime directly, or use Agent Messaging without an Agent Home.
 If you choose to use both, follow Agent Messaging's setup guide for its supported
 configuration; installing Agent Home does not install or configure messaging,
 transfer credentials, or start a messaging service.
+
+---
+
+## Know before you start
+
+> [!CAUTION]
+> **Agent Home is not a sandbox or a secret scanner.** Your runtime keeps its
+> machine permissions and may load its own global configuration. Review imported
+> files and third-party skills before running an agent or sharing a home.
+
+- **Keep secrets out of Git.** Ignored private files are not encrypted; tracked Markdown and skills may contain sensitive information.
+- **Import is not activation.** Hermes sessions, schedules, messaging ownership, and external services are not automatically transferred into a running agent.
+- **Restore is scoped.** Only tracked Home contents are restored; ignored workspace output and runtime state stay untouched.
+- **Chat is optional.** Agent Messaging is independent and needs its own setup and credentials.
+
+## More documentation
+
+- [Hermes import guide](docs/hermes-import.md): source selection, supported files, safety checks, and activation limits.
+- [Runtime adapters](docs/runtimes.md): configuration details and upstream references.
+- [Agent Messaging](https://github.com/soulsteads/soulsteads-agent-messaging): connect an agent to chat, separately.
 
 ## Development
 

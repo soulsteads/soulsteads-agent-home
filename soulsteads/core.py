@@ -233,12 +233,12 @@ def _assert_no_worktree_hardlinks(home: Path) -> None:
             _error(f"hardlinked worktree file is not allowed: {entry}")
 
 
-def commit(home: Path, message: str) -> str:
+def commit(home: Path, message: str | None = None) -> str:
     """Explicitly commit only the narrow, safe identity allowlist."""
     home = Path(home)
     _validate_home(home)
-    if not isinstance(message, str) or not message.strip():
-        _error("commit message is required")
+    if message is not None and (not isinstance(message, str) or not message.strip()):
+        _error("commit message must not be empty")
     _assert_regular_tree(home, home_links=True)
     staged = _git(home, "diff", "--cached", "--name-only", "-z").stdout.split("\0")[:-1]
     if any(not _allowed_path(path) for path in staged):
@@ -253,6 +253,9 @@ def commit(home: Path, message: str) -> str:
     staged = _git(home, "diff", "--cached", "--name-only", "-z").stdout.split("\0")[:-1]
     if not staged or any(not _allowed_path(path) for path in staged):
         _error("index contains unsafe paths")
+    if message is None:
+        noun = "file" if len(staged) == 1 else "files"
+        message = f"Update agent home ({len(staged)} {noun})"
     _git(home, "commit", "-m", message)
     return _git(home, "rev-parse", "HEAD").stdout.strip()
 
