@@ -49,6 +49,8 @@ soulsteads run helper --dry-run
 
 Choose `pi`, `claude`, or `codex` instead if that is the runtime you use.
 Once your runtime is installed and authenticated, launch it with `soulsteads run helper`.
+Or `cd ~/.soulsteads/agents/helper` and run `opencode`, `pi`, `codex`, or `claude`
+directly. Native configuration supplies the behavior; the Soulsteads launcher is optional.
 
 ### Other installation options
 
@@ -83,9 +85,9 @@ Each home has:
 - `AGENTS.md`: instructions to read the identity, user, and memory files.
 - `MEMORY.md`: an initially empty durable-memory document.
 - `workspace/`: scratch space for work, excluded from tracking except its placeholder.
-- `skills/`: portable `SKILL.md` folders, with an optional original starter skill.
-- `soulsteads.json`: name, runtime, and manifest schema version.
-- Project-local runtime configuration and an initial local Git commit.
+- `skills/`: one portable skill tree, with optional verification and skill-maintenance starters.
+- `soulsteads.json`: name, launch default, manifest version, and generated-file ownership hashes.
+- Coexisting native configuration for all four harnesses and an initial local Git commit.
 
 New homes are private (`0700` directories, `0600` generated files; executable
 files in installed skills retain owner-only execute permission). No Git remote is added.
@@ -129,6 +131,7 @@ never launches an agent and does not establish that migration is activation-read
 ```sh
 soulsteads config helper
 soulsteads config helper --runtime codex
+soulsteads config helper --sync  # Refresh native files after canonical Markdown edits
 soulsteads run helper --dry-run
 soulsteads run helper -- --help
 soulsteads run ~/agents/researcher
@@ -140,14 +143,64 @@ root**, so project instructions and configuration are discoverable. Ask the agen
 to keep task outputs in `workspace/` when appropriate. This is not a sandbox.
 Runtime arguments after `--` are passed verbatim without a shell.
 
-Configuration changes require a clean tracked tree and preserve your Markdown.
-Customized runtime configuration is not silently overwritten. Commit changes
-before switching runtimes; inspect and commit the new configuration afterward.
+With maintained Pi 1.4.0, select a separate project without copying Home files:
+
+```sh
+soulsteads run helper --project /path/to/project --dry-run
+soulsteads run helper --project /path/to/project
+```
+
+This selects the Home's identity, operating guidance and canonical skills through
+native Pi flags while the project's `AGENTS.md` remains native. It does not select
+the Home's MCP/provider settings or move authentication/session state. The binary
+version is not automatically checked: install the qualified maintained package.
+Other harnesses reject `--project` in this release rather than promise untested
+equivalence. See [native acceptance and limits](docs/native-acceptance.md).
+
+Changing the launch default requires a clean tracked tree and never removes another
+harness's files. `config --sync` accepts uncommitted canonical edits and upgrades
+older Homes. It refreshes Pi's system-append file and Codex's additive developer
+instructions; OpenCode and Claude use native includes. Unrelated settings are
+preserved, and conflicting owned edits are refused. Inspect and commit the diff,
+then start a new native session or use its supported reload mechanism.
 Global models, authentication, MCP servers, permissions, and runtime defaults are
 not changed. This CLI does not install or isolate runtime binaries, and the
 runtime can still load its own global configuration.
 
 See [runtime adapters and upstream references](https://github.com/soulsteads/soulsteads-agent-home/blob/main/docs/runtimes.md).
+
+### Optional Hindsight memory tools
+
+Point the Home at an existing authorized bank without copying credentials:
+
+```sh
+soulsteads config helper \
+  --hindsight-url https://memory.example/mcp/helper/ \
+  --hindsight-token-env HINDSIGHT_API_TOKEN
+soulsteads verify helper
+```
+
+The harness reads its native project MCP configuration and the token from its
+environment. Agent Home never copies the token into files, contacts the endpoint,
+starts a service, or ingests history. Verification checks only whether the referenced
+environment variable is set. Native trust/approval still applies. This prepares
+explicit memory-tool configuration, not live Hindsight qualification, automatic
+retention or recall injection. Remove owned
+project entries with `soulsteads config helper --no-hindsight`; bank data and global
+servers remain untouched. See the [runtime guide](docs/runtimes.md) for details.
+
+### Skill improvement
+
+The bundled `skill-maintenance` procedure separates durable facts/preferences,
+reusable procedures, and temporary handoffs. It covers remember, correct, learn,
+and handoff without introducing a learning service. Its modes are **off**,
+**propose** (default), and **scoped-apply**; these are instruction conventions, not
+a permission-enforcement system. The harness uses its own native tools and applies
+changes only with explicit authority or a narrow preapproved scope. Generic
+self-improvement never authorizes identity, permission, credential, plugin, or
+schedule edits. Service-owned memory has no competing local writer.
+`--no-skills` omits both starter skills. Template and disposable-file checks do not
+establish that a model will follow the workflow.
 
 ## Track and restore
 

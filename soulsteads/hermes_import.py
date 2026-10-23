@@ -638,6 +638,9 @@ def import_profile(
             json.dumps(private_receipt, indent=2) + "\n", encoding="utf-8"
         )
         receipt.chmod(0o600)
+        from .native_config import sync
+
+        sync(home)
         if core._git(home, "status", "--porcelain").stdout:
             core.commit(home, "Import Hermes agent definition")
         snap.verify()
