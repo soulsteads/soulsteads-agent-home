@@ -15,8 +15,9 @@ class AutomaticCommitTests(unittest.TestCase):
         ).strip()
 
     def test_default_api_message_counts_added_modified_and_deleted_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = create("helper", "opencode", base=Path(tmp) / "agents")
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp).resolve()
+            home = create("helper", "opencode", base=tmp / "agents")
             (home / "USER.md").write_text("Synthetic private contents\n")
             (home / "MEMORY.md").unlink()
             skill = home / "skills" / "example"
@@ -30,16 +31,18 @@ class AutomaticCommitTests(unittest.TestCase):
             )
 
     def test_no_changes_does_not_create_commit(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = create("helper", "opencode", base=Path(tmp) / "agents")
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp).resolve()
+            home = create("helper", "opencode", base=tmp / "agents")
             before = self.git(home, "rev-parse", "HEAD")
             with self.assertRaises(HomeError):
                 commit(home)
             self.assertEqual(self.git(home, "rev-parse", "HEAD"), before)
 
     def test_unsafe_staged_file_still_rejected_without_message(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = create("helper", "opencode", base=Path(tmp) / "agents")
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp).resolve()
+            home = create("helper", "opencode", base=tmp / "agents")
             before = self.git(home, "rev-parse", "HEAD")
             (home / ".env").write_text("SYNTHETIC_SECRET=never-stage\n")
             self.git(home, "add", "-f", ".env")
@@ -48,8 +51,9 @@ class AutomaticCommitTests(unittest.TestCase):
             self.assertEqual(self.git(home, "rev-parse", "HEAD"), before)
 
     def test_explicit_message_preserved_and_blank_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = create("helper", "opencode", base=Path(tmp) / "agents")
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            tmp = Path(raw_tmp).resolve()
+            home = create("helper", "opencode", base=tmp / "agents")
             (home / "USER.md").write_text("Synthetic update\n")
             before = self.git(home, "rev-parse", "HEAD")
             with self.assertRaises(HomeError):
