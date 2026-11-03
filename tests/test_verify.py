@@ -3,9 +3,23 @@ import os
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 from soulsteads import cli, core
+
+
+@contextmanager
+def _fixture_git_writes():
+    """Keep background Git maintenance out of fixture snapshots."""
+    original_git = core._git
+
+    def without_auto_maintenance(home, *args, **kwargs):
+        return original_git(home, "-c", "maintenance.auto=false", *args, **kwargs)
+
+    with mock.patch.object(core, "_git", side_effect=without_auto_maintenance):
+        yield
 
 
 class VerifyTests(unittest.TestCase):
@@ -14,6 +28,28 @@ class VerifyTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name).resolve() / "home"
         core.create("helper", "opencode", path=self.home, with_skills=False)
+
+    def test_fixture_git_writers_disable_automatic_maintenance(self):
+        calls = []
+        original_git = core._git
+
+        def record(home, *args, **kwargs):
+            calls.append(args)
+            return original_git(home, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            home = Path(raw_tmp).resolve() / "home"
+            with mock.patch.object(core, "_git", side_effect=record):
+                with _fixture_git_writes():
+                    core.create("helper", "opencode", path=home, with_skills=False)
+            local_maintenance = original_git(
+                home, "config", "--local", "--get", "maintenance.auto", check=False
+            )
+        self.assertTrue(calls)
+        self.assertTrue(
+            all(args[:2] == ("-c", "maintenance.auto=false") for args in calls)
+        )
+        self.assertEqual(local_maintenance.returncode, 1)
 
     def test_create_and_import_verify_under_group_writable_umask(self):
         from soulsteads.hermes_import import import_profile
@@ -35,14 +71,15 @@ class VerifyTests(unittest.TestCase):
                         home = root / f"{operation}-{runtime}-{mask}"
                         previous = os.umask(mask)
                         try:
-                            if operation == "create":
-                                core.create(
-                                    "helper", runtime, path=home, with_skills=False
-                                )
-                            else:
-                                import_profile(
-                                    "helper", source, runtime=runtime, path=home
-                                )
+                            with _fixture_git_writes():
+                                if operation == "create":
+                                    core.create(
+                                        "helper", runtime, path=home, with_skills=False
+                                    )
+                                else:
+                                    import_profile(
+                                        "helper", source, runtime=runtime, path=home
+                                    )
                             self.assertEqual(os.umask(mask), mask)
                         finally:
                             os.umask(previous)
