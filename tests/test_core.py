@@ -36,11 +36,12 @@ class CoreTests(unittest.TestCase):
             original = manifest.read_bytes()
             os.link(manifest, external)
 
-            configure(home, "codex")
+            with self.assertRaises(HomeError):
+                configure(home, "codex")
 
             self.assertEqual(external.read_bytes(), original)
-            self.assertEqual(load(home)["runtime"], "codex")
-            self.assertNotEqual(manifest.stat().st_ino, external.stat().st_ino)
+            self.assertEqual(manifest.read_bytes(), original)
+            self.assertEqual(load(home)["runtime"], "opencode")
 
     def test_write_private_preserves_preexisting_colliding_temp_file(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as temporary:
@@ -137,9 +138,12 @@ class CoreTests(unittest.TestCase):
     def test_load_reads_only_standalone_manifest(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as temporary:
             home = create("ada", "opencode", base=Path(temporary) / "agents")
+            manifest = load(home)
             self.assertEqual(
-                load(home), {"schema_version": 1, "name": "ada", "runtime": "opencode"}
+                {key: manifest[key] for key in ("schema_version", "name", "runtime")},
+                {"schema_version": 1, "name": "ada", "runtime": "opencode"},
             )
+            self.assertIn("managed_files", manifest)
             (home / "soulsteads.json").write_text("{}", encoding="utf-8")
             with self.assertRaises(HomeError):
                 load(home)

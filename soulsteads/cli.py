@@ -76,6 +76,25 @@ def parser():
         "agent", help="Agent name or path; use ./name for a relative path"
     )
     config.add_argument("--runtime", choices=RUNTIMES)
+    config.add_argument(
+        "--sync",
+        action="store_true",
+        help="Refresh native configuration from canonical files; no runtime is launched",
+    )
+    memory = config.add_mutually_exclusive_group()
+    memory.add_argument(
+        "--hindsight-url",
+        help="Explicit HTTPS per-bank Hindsight MCP URL; configure tools only",
+    )
+    memory.add_argument(
+        "--no-hindsight",
+        action="store_true",
+        help="Remove owned Hindsight MCP configuration",
+    )
+    config.add_argument(
+        "--hindsight-token-env",
+        help="Credential environment-variable name, never its value (default: HINDSIGHT_API_TOKEN)",
+    )
     commit = commands.add_parser(
         "commit", help="Commit agent configuration and skills locally"
     )
@@ -102,6 +121,7 @@ def parser():
     )
     run.add_argument("agent")
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--project", type=Path, help="Select a separate project cwd using qualified native mechanisms (maintained Pi 1.4.0 only)")
     return result
 
 
@@ -169,7 +189,21 @@ def main(argv=None):
             )
         elif args.command == "config":
             home = agent_path(args.agent, args.agents_dir)
-            if args.runtime:
+            if args.hindsight_token_env and not args.hindsight_url:
+                raise core.HomeError("--hindsight-token-env requires --hindsight-url")
+            if args.sync or args.hindsight_url or args.no_hindsight:
+                from .native_config import UNSET, sync
+
+                hindsight = UNSET
+                if args.hindsight_url:
+                    hindsight = {
+                        "url": args.hindsight_url,
+                        "token_env": args.hindsight_token_env or "HINDSIGHT_API_TOKEN",
+                    }
+                elif args.no_hindsight:
+                    hindsight = None
+                sync(home, args.runtime, hindsight=hindsight)
+            elif args.runtime:
                 core.configure(home, args.runtime)
             print(json.dumps(core.load(home), indent=2))
         elif args.command == "commit":
@@ -179,14 +213,16 @@ def main(argv=None):
         elif args.command == "run":
             home = agent_path(args.agent, args.agents_dir).absolute()
             runtime = core.load(home)["runtime"]
-            argv = [runtime]
-            if runtime == "pi":
-                argv += ["@SOUL.md", "@USER.md", "@MEMORY.md"]
-            argv += extra
-            if args.dry_run:
-                print(json.dumps({"cwd": str(home), "argv": argv}))
+            if args.project is not None:
+                from .launch import prepare_launch
+
+                launch = prepare_launch(home, runtime, args.project, extra)
             else:
-                return subprocess.run(argv, check=False, cwd=home).returncode
+                launch = {"cwd": str(home), "argv": [runtime, *extra]}
+            if args.dry_run:
+                print(json.dumps(launch))
+            else:
+                return subprocess.run(launch["argv"], check=False, cwd=launch["cwd"]).returncode
         elif args.command == "skill":
             print(
                 core.install_skill(

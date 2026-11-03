@@ -39,9 +39,11 @@ class VerifyTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as raw_tmp:
             home = Path(raw_tmp).resolve() / "home"
-            with mock.patch.object(core, "_git", side_effect=record):
-                with _fixture_git_writes():
-                    core.create("helper", "opencode", path=home, with_skills=False)
+            with (
+                mock.patch.object(core, "_git", side_effect=record),
+                _fixture_git_writes(),
+            ):
+                core.create("helper", "opencode", path=home, with_skills=False)
             local_maintenance = original_git(
                 home, "config", "--local", "--get", "maintenance.auto", check=False
             )

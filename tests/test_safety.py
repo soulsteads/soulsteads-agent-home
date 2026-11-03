@@ -60,7 +60,7 @@ class SafetyTests(unittest.TestCase):
         persona = (self.home / "SOUL.md").read_text()
         core.configure(self.home, "claude")
         self.assertEqual((self.home / "SOUL.md").read_text(), persona)
-        self.assertFalse((self.home / "opencode.json").exists())
+        self.assertTrue((self.home / "opencode.json").exists())
         core.commit(self.home, "Switch runtime")
         self.assertEqual(self.git("status", "--porcelain"), "")
         core.revert(self.home, old)
@@ -103,9 +103,8 @@ class SafetyTests(unittest.TestCase):
     def test_customized_runtime_config_is_not_removed(self):
         (self.home / "opencode.json").write_text('{"custom": true}\n')
         core.commit(self.home, "Customize")
-        with self.assertRaises(core.HomeError):
-            core.configure(self.home, "codex")
-        self.assertEqual(core.load(self.home)["runtime"], "opencode")
+        core.configure(self.home, "codex")
+        self.assertEqual(core.load(self.home)["runtime"], "codex")
         self.assertEqual(
             (self.home / "opencode.json").read_text(), '{"custom": true}\n'
         )

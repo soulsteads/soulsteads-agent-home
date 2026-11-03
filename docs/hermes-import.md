@@ -130,7 +130,7 @@ runtime. Instructions can refer to Hermes-only tools and policies. Review them
 before running the imported agent. Runtime-global skills can still be discovered;
 a local catalogue is not a cross-runtime authorization sandbox.
 
-## Hindsight integration: pending setup choice
+## Hindsight integration: explicit tools versus automatic behavior
 
 The importer detects `memory.provider: hindsight` and profile-local
 `hindsight/config.json`. It preserves that JSON unchanged under ignored private
@@ -140,7 +140,7 @@ source changes and optional-file appearance remain part of snapshot verification
 The importer does not inspect shared `~/.hindsight` state or the ambient process
 environment.
 
-**Automatic native Hindsight setup is not implemented in this candidate.** The
+**Automatic Hindsight migration is not implemented.** The
 report identifies it as required manual work rather than claiming memory is ready.
 `--allow-partial` acknowledges this omission; it does not install or enable hooks.
 
@@ -149,10 +149,13 @@ supports the target harnesses, but adds a JavaScript dependency and hooks that c
 retain conversations and inject memory. Its general installer also changes
 user-global harness settings. A scoped importer integration must preserve the
 source profile's supported memory behavior without running that global installer
-or enabling additional ingestion. Bank access alone through MCP is a narrower
-alternative; it does not preserve automatic memory behavior. That choice remains
-an owner decision before implementation. No Hindsight server or memory bank is
-contacted or modified during import.
+or enabling additional ingestion. After reviewing the imported Home, explicitly
+configure bank tools with `soulsteads config <home> --hindsight-url
+https://memory.example/mcp/helper/ --hindsight-token-env HINDSIGHT_API_TOKEN`.
+This writes each harness's native MCP configuration without reading credentials;
+it is narrower than automatic memory and does not preserve retention or injection
+behavior. See [native configuration](runtimes.md). No Hindsight server or memory
+bank is contacted or modified during import or configuration.
 
 ## Apply only after review
 

@@ -9,6 +9,7 @@ import secrets
 import shutil
 import stat
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
@@ -32,7 +33,7 @@ def _private_dir(path: Path) -> None:
 
 
 def _write_private(path: Path, text: str) -> None:
-    """Atomically replace a private file without writing through hardlinks."""
+    """Atomically initialize canonical private files, not native configuration."""
     temporary = path.with_name(f".{path.name}.{secrets.token_hex(16)}.tmp")
     descriptor = -1
     temporary_created = False
@@ -141,7 +142,9 @@ def _assert_regular_tree(root: Path, home_links: bool = False) -> None:
             _error(f"special file is not allowed: {entry}")
 
 
-def _validate_home(home: Path) -> dict:
+def _validate_home(
+    home: Path, *, reader: Callable[[Path], str | None] | None = None
+) -> dict:
     home = Path(home)
     if home.is_symlink() or not home.is_dir():
         _error("home must be a non-symlink directory")
@@ -159,7 +162,14 @@ def _validate_home(home: Path) -> dict:
     if manifest.is_symlink() or not manifest.is_file():
         _error("missing manifest")
     try:
-        value = json.loads(manifest.read_text(encoding="utf-8"))
+        text = (
+            reader(manifest)
+            if reader is not None
+            else manifest.read_text(encoding="utf-8")
+        )
+        if text is None:
+            raise HomeError("missing manifest")
+        value = json.loads(text)
     except (OSError, json.JSONDecodeError) as exc:
         raise HomeError("invalid manifest") from exc
     from .runtimes import RUNTIMES
@@ -210,6 +220,8 @@ def _allowed_path(path: str) -> bool:
             "soulsteads.json",
             ".gitignore",
             "workspace/.gitkeep",
+            ".mcp.json",
+            ".pi/mcp.json",
             *runtime_paths,
             *SKILL_LINKS,
         }
@@ -329,34 +341,10 @@ def revert(home: Path, revision: str) -> str:
 
 
 def configure(home: Path, runtime: str) -> None:
-    home = Path(home)
-    manifest = _validate_home(home)
-    _assert_clean(home)
-    generated = _render(runtime)
-    previous = _render(manifest["runtime"])
-    removals: list[Path] = []
-    for relative, content in previous.items():
-        if relative not in generated:
-            destination = home / _safe_relative(relative)
-            if destination.exists():
-                if (
-                    destination.is_symlink()
-                    or destination.read_text(encoding="utf-8") != content
-                ):
-                    _error(f"refusing to remove customized runtime file: {relative}")
-                removals.append(destination)
-    for relative, content in generated.items():
-        destination = home / _safe_relative(relative)
-        if destination.exists() and destination.read_text(encoding="utf-8") != content:
-            _error(f"refusing to overwrite customized runtime file: {relative}")
-    manifest["runtime"] = runtime
-    for destination in removals:
-        destination.unlink()
-    _write_private(home / "soulsteads.json", json.dumps(manifest, indent=2) + "\n")
-    for relative, content in generated.items():
-        destination = home / _safe_relative(relative)
-        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        _write_private(destination, content)
+    """Change runtime selection through the checked manifest publication path."""
+    from .native_config import configure_runtime
+
+    configure_runtime(home, runtime)
 
 
 def install_skill(home: Path, source: Path) -> Path:
@@ -424,21 +412,19 @@ def create(
         _error("refusing to adopt or overwrite an existing path")
     _check_safe_ancestors(target.parent)
     _check_not_nested_git(target.parent)
-    rendered = _render(runtime)
+    from .runtimes import RUNTIMES, digest, render_all
+    from .templates import DOCUMENTS
+
+    if runtime not in RUNTIMES:
+        _error("unsupported runtime")
+    rendered = render_all(DOCUMENTS)
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     _private_dir(target)
     try:
-        from .templates import DOCUMENTS, STARTER
+        from .templates import DOCUMENTS, SKILL_MAINTENANCE, STARTER
 
         for filename, content in DOCUMENTS.items():
             _write_private(target / filename, content)
-        _write_private(
-            target / "soulsteads.json",
-            json.dumps(
-                {"schema_version": 1, "name": name, "runtime": runtime}, indent=2
-            )
-            + "\n",
-        )
         _write_private(
             target / ".gitignore",
             ".env\n.env.*\ncredentials*\nsecrets*\n*.key\n*.pem\nauth.json\nworkspace/*\n!workspace/.gitkeep\n.runtime/\n.cache/\nsessions/\n.claude/settings.local.json\n.claude/projects/\n.pi/sessions/\n.codex/sessions/\n.opencode/node_modules/\n",
@@ -456,20 +442,34 @@ def create(
             alias.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             alias.symlink_to(link, target_is_directory=True)
         if with_skills:
-            starter = skills / "starter"
-            _private_dir(starter)
-            _write_private(starter / "SKILL.md", STARTER)
-        for relative, text in rendered.items():
-            destination = target / _safe_relative(relative)
-            destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            destination.parent.chmod(0o700)
-            _write_private(destination, text)
+            for skill_name, content in (
+                ("starter", STARTER),
+                ("skill-maintenance", SKILL_MAINTENANCE),
+            ):
+                starter = skills / skill_name
+                _private_dir(starter)
+                _write_private(starter / "SKILL.md", content)
         # Git inherits the caller's umask; create its root privately so newly
         # created and imported Homes satisfy the verifier without target repair.
         _private_dir(target / ".git")
         _git(target, "init", "--quiet")
         _git(target, "config", "user.name", "Soulsteads")
         _git(target, "config", "user.email", "soulsteads@localhost")
+        manifest = {
+            "schema_version": 1,
+            "name": name,
+            "runtime": runtime,
+            "managed_files": {p: digest(text) for p, text in rendered.items()},
+        }
+        from .publication import publish_fresh
+
+        publish_fresh(
+            target,
+            {
+                **rendered,
+                "soulsteads.json": json.dumps(manifest, indent=2) + "\n",
+            },
+        )
         _git(target, "add", "--", ".")
         _git(target, "commit", "--quiet", "-m", "Initialize agent home")
     except Exception:

@@ -30,6 +30,7 @@ def _json(raw):
 def verify_home(home):
     """Return content-free findings; success is not runtime or privacy certification."""
     findings = []
+    adapters = []
 
     def add(identifier, status, consequence, next_action):
         findings.append(
@@ -100,6 +101,56 @@ def verify_home(home):
                 "passed",
                 "Adapter files have valid basic syntax.",
                 "Native configuration semantics, dependencies and credentials remain unverified.",
+            )
+        from .native_config import plan
+
+        def native_read(path):
+            raw = snap.read(path)
+            return None if raw is None else raw.decode("utf-8")
+
+        writes, _ = plan(home, manifest, read=native_read)
+        add(
+            "native-projections",
+            "needs-review" if writes or "managed_files" not in manifest else "passed",
+            "Native projections need an explicit refresh or legacy upgrade."
+            if writes or "managed_files" not in manifest
+            else "Native instruction projections match the canonical Home files.",
+            "Run soulsteads config <home> --sync, then inspect the diff and start or reload the native harness."
+            if writes or "managed_files" not in manifest
+            else "Harness trust, instruction following, resume and compaction still require native qualification.",
+        )
+        adapters = [
+            {
+                "runtime": name,
+                "paths": list(render(name)),
+                "skill_paths": list(SKILL_LINKS),
+                "mechanism": "native reference"
+                if name in ("opencode", "claude")
+                else "generated native projection",
+                "evidence": "offline-structural",
+                "runtime_version": "unverified",
+                "mode": "home-root",
+                "reload": "Start a fresh native session after an explicit refresh; resume and compaction are unverified.",
+                "trust": "Native project trust, MCP approval and permission settings remain authoritative.",
+            }
+            for name in RUNTIMES
+        ]
+        if manifest.get("hindsight") is not None:
+            # plan() has already validated this reference. Never echo its values.
+            present = bool(os.environ.get(manifest["hindsight"]["token_env"]))
+            add(
+                "memory-credential",
+                "passed" if present else "needs-review",
+                "The referenced credential environment variable is set; its validity is unverified."
+                if present
+                else "The referenced credential environment variable is not set.",
+                "Supply the credential through the harness environment, never in native files or Git.",
+            )
+            add(
+                "memory-qualification",
+                "needs-review",
+                "MCP configuration is prepared, not live Hindsight qualification or native approval.",
+                "Use a separately authorized synthetic bank to test discovery, explicit recall and retain, and exact-bank readback; check native approval and server availability. Old Pi packages without native MCP are unsupported.",
             )
         aliases = {}
         for relative, target in SKILL_LINKS.items():
@@ -287,6 +338,7 @@ def verify_home(home):
             else "passed"
         ),
         "activation_ready": False,
+        "native_adapters": adapters,
         "findings": findings,
         "not_verified": [
             "runtime-execution",
