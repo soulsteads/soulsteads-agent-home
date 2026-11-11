@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from soulsteads import core
 from soulsteads.launch import prepare_launch
@@ -17,7 +18,7 @@ class ProjectAdapterTests(unittest.TestCase):
         self.addCleanup(os.umask, old_umask)
         self.temp = tempfile.TemporaryDirectory(prefix="project-adapters-")
         self.addCleanup(self.temp.cleanup)
-        root = Path(self.temp.name)
+        root = Path(self.temp.name).resolve()
         self.home = root / "agent-home"
         self.home.mkdir()
         subprocess.run(["git", "init", "--quiet", str(self.home)], check=True)
@@ -111,6 +112,24 @@ class ProjectAdapterTests(unittest.TestCase):
                     allow_context_in_argv=True,
                 )
                 self.assertEqual(plan["argv"][-len(extra) :], list(extra))
+
+    def test_fixture_resolves_platform_temporary_directory_alias(self) -> None:
+        canonical = self.home.parent / "canonical-temp"
+        canonical.mkdir(mode=0o700)
+        alias = self.home.parent / "temporary-alias"
+        alias.symlink_to(canonical, target_is_directory=True)
+        original = tempfile.TemporaryDirectory
+
+        def temporary(*args, **kwargs):
+            return original(*args, dir=alias, **kwargs)
+
+        result = unittest.TestResult()
+        with patch.object(tempfile, "TemporaryDirectory", side_effect=temporary):
+            case = ProjectAdapterTests(
+                "test_pi_keeps_established_home_resource_selection"
+            )
+            case.run(result)
+        self.assertTrue(result.wasSuccessful(), str(result.errors + result.failures))
 
     def test_pi_keeps_established_home_resource_selection(self) -> None:
         plan = prepare_launch(self.home, "pi", self.project, extra=("--no-session",))
