@@ -62,12 +62,11 @@ or grant filesystem access. Starting in another unrelated repository does not
 implicitly carry this Home's identity. Project access and trust belong to the
 harness; Agent Home never grants trust or changes approval/sandbox policy.
 
-The qualified exception is maintained Pi 1.4.0:
-`soulsteads run helper --project /path/to/project`. Native Pi flags select Home
-identity/operating guidance and canonical skills while project instructions load
-from the project cwd. Home MCP/provider configuration is not forwarded. Other
-project selectors are rejected in this release. See [current native acceptance](native-acceptance.md)
-for package identity, tested trust boundaries, and unsupported combinations.
+Use `soulsteads run helper --project /path/to/project` to explicitly select Home
+identity and skill guidance in a separate repository. Home MCP/provider settings
+are not forwarded. See [separate-project launch](#separate-project-launch) and
+[current native acceptance](native-acceptance.md) for the per-harness mechanisms,
+versioned qualification and limits.
 
 After editing canonical identity or curated memory, refresh before a new session:
 
@@ -414,4 +413,74 @@ qualification. Older clients without those events cannot provide this automation
   [settings](https://code.claude.com/docs/en/settings),
   [skills](https://code.claude.com/docs/en/skills), [MCP](https://code.claude.com/docs/en/mcp).
 - Hindsight: [MCP server](https://github.com/vectorize-io/hindsight/blob/main/hindsight-docs/docs/developer/mcp-server.md),
-  [optional maintained coding-agent integration](https://github.com/vectorize-io/hindsight/tree/main/hindsight-integrations/coding-agents).
+  - Optional maintained coding-agent integration: [Hindsight](https://github.com/vectorize-io/hindsight/tree/main/hindsight-integrations/coding-agents).
+
+## Separate-project launch
+
+`soulsteads run helper --project /path/to/project` selects a separate working
+repository while carrying the selected Home's identity and skill guidance.
+`prepare_launch(home, runtime, project, extra=())` returns the native arguments,
+child environment and project working directory; extra arguments stay literal.
+No adapter copies authentication/session state or writes project/global config.
+
+**Private argv consent:** Codex and Claude place the selected Home context in
+process arguments, which may be readable by other local users or process
+monitors even when Home files are private. These project adapters refuse to run
+unless `--allow-context-in-argv` is supplied (or `allow_context_in_argv=True` is
+passed to the API). Use a Home-root launch instead if that tradeoff is not
+acceptable. A private-file transport for these interactive modes is not qualified
+here. Dry-run output always redacts their inline Home text.
+
+- **Maintained Pi:** native `--append-system-prompt` paths carry the Home identity
+  projection and AGENTS; `--skill` paths select canonical Home skills.
+- **Codex:** native `--cd` selects the project and a per-run
+  `--config developer_instructions=...` value carries bounded Home identity,
+  AGENTS and canonical SKILL.md content. This selects the Home developer-guidance
+  value for that run, rather than merging arbitrary ambient developer strings.
+  Skills are prompt content, not Codex-native slash-skill registration. Neither
+  `CODEX_HOME` nor `--add-dir` is changed.
+- **Claude Code:** `--append-system-prompt` carries the same bounded Home content.
+  This is not Claude-native slash-skill registration; no `--add-dir` is used.
+- **OpenCode:** process-local `OPENCODE_CONFIG_CONTENT` adds Home instruction
+  files and the canonical skill search path. An existing inline configuration
+  retains its unrelated model/provider/permission fields, instruction paths,
+  skill paths and skill URLs. Native discovery does not prove skill activation.
+
+Codex/Claude inline context is bounded to avoid silently dropping Home content
+or exceeding command-line limits. Oversized context is refused. These mechanisms
+are not filesystem sandboxes, do not grant trust, and do not change the native
+approval or sandbox settings. Home model/provider settings, MCP connections and
+permission policy are deliberately not copied into project mode.
+
+### Qualification and limits
+
+The focused project tests exercise deterministic arguments, environment handling,
+context markers, no-shell behavior and non-copying. Independent native request
+fixtures additionally exercised Codex 0.157.1, Claude Code 2.1.318 and OpenCode
+1.19.5 with a separate synthetic project. Each native request included Home
+SOUL/USER/MEMORY/AGENTS markers, both canonical skill-description markers and
+project instructions. The project inventory stayed unchanged. Each request was
+stopped by a loopback HTTP 400; no model task completed or real credential was
+used. Maintained Pi 1.4.0 retains its earlier native resource-loading qualification.
+
+To rerun the opt-in request-construction check from a source checkout:
+
+```sh
+python scripts/qualify_project_context.py --runtime codex \
+  --executable /path/to/codex --scratch "$TMPDIR" --output codex-context.json
+```
+
+The script also accepts `claude` and `opencode`. It uses isolated synthetic native
+state and a local error endpoint. It retains its synthetic fixture for inspection;
+remove that fixture after confirming the native processes have exited. Versioned
+receipts and limits are described in [native acceptance](native-acceptance.md).
+
+Official native references:
+
+- Codex [configuration](https://developers.openai.com/codex/config-reference/)
+  and [CLI](https://developers.openai.com/codex/cli/reference).
+- Claude Code [CLI](https://code.claude.com/docs/en/cli-reference)
+  and [skills](https://code.claude.com/docs/en/skills).
+- OpenCode [configuration](https://opencode.ai/docs/config/),
+  [instructions](https://opencode.ai/docs/instructions/) and
+  [skills](https://opencode.ai/docs/skills/).

@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,8 @@ from soulsteads import core
 
 class ProjectLaunchTests(unittest.TestCase):
     def setUp(self):
+        old_umask = os.umask(0o077)
+        self.addCleanup(os.umask, old_umask)
         self.tmp = tempfile.TemporaryDirectory(prefix="soulsteads-launch-")
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name).resolve()
@@ -39,13 +42,19 @@ class ProjectLaunchTests(unittest.TestCase):
         self.assertEqual(plan["argv"][-1], "--no-session")
         self.assertEqual(plan["env"], {})
 
-    def test_codex_is_rejected_until_native_home_skills_are_selectable(self):
+    def test_codex_uses_native_project_root(self):
         from soulsteads.launch import prepare_launch
 
-        with self.assertRaisesRegex(
-            core.HomeError, "native Home A AGENTS.md and skills"
-        ):
-            prepare_launch(self.home, "codex", self.project)
+        plan = prepare_launch(
+            self.home, "codex", self.project, allow_context_in_argv=True
+        )
+
+        self.assertEqual(plan["cwd"], str(self.project))
+        self.assertEqual(plan["argv"][:3], ["codex", "--cd", str(self.project)])
+        override = plan["argv"][plan["argv"].index("--config") + 1]
+        self.assertIn("HOME A operating instructions", override)
+        self.assertIn("Follow Home A skill", override)
+        self.assertEqual(plan["env"], {})
 
 
 if __name__ == "__main__":

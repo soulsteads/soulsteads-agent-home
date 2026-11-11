@@ -7,13 +7,14 @@ from pathlib import Path
 from . import core
 
 
-def prepare_launch(home, runtime, project, extra=()):
+def prepare_launch(home, runtime, project, extra=(), *, allow_context_in_argv=False):
     """Build a native launch plan without changing either home or the process.
 
     Pi supports Home A's generated identity and skills as explicit native inputs,
     while its native resource loader discovers AGENTS.md from project B/C via cwd.
-    This release qualifies maintained Pi 1.4.0 only. Other native mechanisms remain
-    unqualified rather than relocating authentication/state or altering projects.
+    Codex/Claude inline inputs require explicit informed consent because process
+    command lines can be visible to other local users. No native authentication
+    or session directories are relocated.
     """
     home = Path(home).expanduser().absolute()
     project = Path(project).expanduser().absolute()
@@ -21,20 +22,35 @@ def prepare_launch(home, runtime, project, extra=()):
         raise core.HomeError("agent home must be an existing directory")
     if not project.is_dir():
         raise core.HomeError("project directory must be an existing directory")
+    # Validate the selected Home using the same manifest/path checks as the CLI
+    # before producing any native process request.
+    core.load(home)
     if not isinstance(extra, (tuple, list)) or any(
         not isinstance(argument, str) for argument in extra
     ):
         raise core.HomeError("extra launch arguments must be strings")
 
-    if runtime == "codex":
-        raise core.HomeError(
-            "Codex project mode is not qualified for this release: native Home A AGENTS.md and skills require further qualification"
-        )
+    if runtime in {"codex", "claude", "opencode"}:
+        from .project_adapters import claude, codex, opencode
+
+        adapter = {
+            "codex": codex,
+            "claude": claude,
+            "opencode": opencode,
+        }[runtime]
+        if runtime in {"codex", "claude"}:
+            return adapter.build_project_launch(
+                home, project, tuple(extra), allow_context_in_argv=allow_context_in_argv
+            )
+        return adapter.build_project_launch(home, project, tuple(extra))
     if runtime != "pi":
         raise core.HomeError(
             "project launch selection is not qualified for this runtime"
         )
 
+    from .project_adapters.context import collect_context
+
+    _context, skill_names = collect_context(home)
     identity = home / ".pi" / "APPEND_SYSTEM.md"
     home_agents = home / "AGENTS.md"
     if not identity.is_file() or not home_agents.is_file():
@@ -48,10 +64,8 @@ def prepare_launch(home, runtime, project, extra=()):
         str(home_agents),
     ]
     skills = home / "skills"
-    if skills.is_dir():
-        for skill in sorted(skills.iterdir(), key=lambda entry: entry.name):
-            if skill.is_dir() and (skill / "SKILL.md").is_file():
-                argv.extend(("--skill", str(skill)))
+    for name in skill_names:
+        argv.extend(("--skill", str(skills / name)))
     argv.extend(extra)
     return {
         "cwd": str(project),

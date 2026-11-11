@@ -232,6 +232,7 @@ def _allowed_path(path: str) -> bool:
             ".codex/hooks.json",
             ".opencode/plugins/soulsteads-memory.js",
             ".pi/extensions/soulsteads-memory.ts",
+            "opencode.jsonc",
             *runtime_paths,
             *SKILL_LINKS,
         }
