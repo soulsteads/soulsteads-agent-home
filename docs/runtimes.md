@@ -244,6 +244,15 @@ its own setting under the cooperative configuration lock. `--no-hindsight` also
 disables both operations. Configuration stays offline and uses the existing
 checked publisher, ownership/conflict rules, and canonical Git lifecycle.
 
+The native adapters check recall and retention separately. Recall-only sessions
+do not cache completed replies, fetch session messages for retention, or invoke
+retain callbacks. Retention-only sessions still capture the prompt but do not
+inject recall context. With both flags off, neither prompt nor reply content is
+processed by these adapters. Pi discards a cached reply if retention is disabled
+before settlement; OpenCode rechecks retention after awaiting session messages
+and before consuming the returned replies. These are automatic-memory controls,
+not a restriction on separately invoked native MCP tools.
+
 Native wiring:
 
 - **Claude:** owned `UserPromptSubmit` and `Stop` callback groups in project
