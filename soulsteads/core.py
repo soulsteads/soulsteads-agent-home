@@ -183,6 +183,12 @@ def _validate_home(
         or value.get("runtime") not in RUNTIMES
     ):
         _error("unsupported manifest schema")
+    from .learning import validate as validate_learning
+
+    validate_learning(value.get("learning"))
+    from .memory_automation import validate as validate_automation
+
+    validate_automation(value.get("hindsight_automation"), value.get("hindsight"))
     return value
 
 
@@ -222,6 +228,10 @@ def _allowed_path(path: str) -> bool:
             "workspace/.gitkeep",
             ".mcp.json",
             ".pi/mcp.json",
+            "LEARNING.md",
+            ".codex/hooks.json",
+            ".opencode/plugins/soulsteads-memory.js",
+            ".pi/extensions/soulsteads-memory.ts",
             *runtime_paths,
             *SKILL_LINKS,
         }
@@ -395,6 +405,8 @@ def create(
     path: Path | None = None,
     base: Path | None = None,
     with_skills: bool = True,
+    *,
+    learning: dict | None = None,
 ) -> Path:
     """Create a fresh standalone, private, generated agent Git repository."""
     _check_name(name)
@@ -417,7 +429,15 @@ def create(
 
     if runtime not in RUNTIMES:
         _error("unsupported runtime")
-    rendered = render_all(DOCUMENTS)
+    from .learning import validate as validate_learning
+
+    if learning is None:
+        learning = {"mode": "off", "skills": []}
+    validate_learning(learning)
+    available = {"starter", "skill-maintenance"} if with_skills else set()
+    if any(name not in available for name in learning["skills"]):
+        _error("learning scope requires existing local skill files")
+    rendered = render_all(DOCUMENTS, learning=learning)
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     _private_dir(target)
     try:
@@ -459,6 +479,7 @@ def create(
             "schema_version": 1,
             "name": name,
             "runtime": runtime,
+            "learning": learning,
             "managed_files": {p: digest(text) for p, text in rendered.items()},
         }
         from .publication import publish_fresh

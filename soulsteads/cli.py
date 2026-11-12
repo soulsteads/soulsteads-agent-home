@@ -9,6 +9,29 @@ from pathlib import Path
 from .runtimes import RUNTIMES
 
 
+def _learning_options(command):
+    from .learning import MODES
+
+    command.add_argument(
+        "--learning",
+        choices=MODES,
+        help="Skill learning guidance (new homes: off); native permissions still apply",
+    )
+    command.add_argument(
+        "--learning-skill",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Existing local skill whose SKILL.md may receive scoped procedural corrections; repeat with --learning scoped-apply",
+    )
+
+
+def _learning_policy(args):
+    if args.learning_skill and args.learning != "scoped-apply":
+        raise ValueError("--learning-skill requires --learning scoped-apply")
+    return {"mode": args.learning, "skills": args.learning_skill}
+
+
 def parser():
     result = argparse.ArgumentParser(
         prog="soulsteads",
@@ -34,6 +57,7 @@ def parser():
     create.add_argument(
         "--no-skills", action="store_true", help="Omit bundled starter skills"
     )
+    _learning_options(create)
     importer = commands.add_parser(
         "import-hermes", help="Inspect or import a local Hermes profile into a new home"
     )
@@ -69,13 +93,20 @@ def parser():
         "verify", help="Check a Home offline without launching its runtime"
     )
     verify.add_argument("agent")
+    capabilities = commands.add_parser(
+        "capabilities",
+        help="Show adapter support and qualification limits without probing a runtime",
+    )
+    capabilities.add_argument("--runtime", choices=RUNTIMES)
     config = commands.add_parser(
-        "config", help="Show configuration or change the runtime"
+        "config",
+        help="Show or compile native runtime, memory and learning configuration",
     )
     config.add_argument(
         "agent", help="Agent name or path; use ./name for a relative path"
     )
     config.add_argument("--runtime", choices=RUNTIMES)
+    _learning_options(config)
     config.add_argument(
         "--sync",
         action="store_true",
@@ -95,6 +126,20 @@ def parser():
         "--hindsight-token-env",
         help="Credential environment-variable name, never its value (default: HINDSIGHT_API_TOKEN)",
     )
+    for operation in ("recall", "retain"):
+        config.add_argument(
+            "--hindsight-" + operation,
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Opt in to native automatic memory "
+            + operation
+            + "; requires a configured bank",
+        )
+    hook = commands.add_parser(
+        "memory-hook", help="Run an opt-in native memory callback (JSON on stdin)"
+    )
+    hook.add_argument("--runtime", choices=RUNTIMES, required=True)
+    hook.add_argument("--event", choices=("prompt", "retain"), required=True)
     commit = commands.add_parser(
         "commit", help="Commit agent configuration and skills locally"
     )
@@ -121,7 +166,11 @@ def parser():
     )
     run.add_argument("agent")
     run.add_argument("--dry-run", action="store_true")
-    run.add_argument("--project", type=Path, help="Select a separate project cwd using qualified native mechanisms (maintained Pi 1.4.0 only)")
+    run.add_argument(
+        "--project",
+        type=Path,
+        help="Select a separate project cwd using qualified native mechanisms (maintained Pi 1.4.0 only)",
+    )
     return result
 
 
@@ -171,6 +220,14 @@ def main(argv=None):
                     args.name, args.source, args.profile, args.runtime, **options
                 )
             print(json.dumps(report, indent=2))
+        elif args.command == "memory-hook":
+            from .memory_hooks import main as memory_hook
+
+            return memory_hook(args.runtime, args.event)
+        elif args.command == "capabilities":
+            from .capabilities import report
+
+            print(json.dumps(report(args.runtime), indent=2))
         elif args.command == "verify":
             from .verification import verify_home
 
@@ -185,15 +242,31 @@ def main(argv=None):
                     path=args.path,
                     base=args.agents_dir,
                     with_skills=not args.no_skills,
+                    learning=_learning_policy(args)
+                    if args.learning or args.learning_skill
+                    else None,
                 )
             )
         elif args.command == "config":
             home = agent_path(args.agent, args.agents_dir)
             if args.hindsight_token_env and not args.hindsight_url:
                 raise core.HomeError("--hindsight-token-env requires --hindsight-url")
-            if args.sync or args.hindsight_url or args.no_hindsight:
+            if (
+                args.sync
+                or args.hindsight_url
+                or args.no_hindsight
+                or args.learning
+                or args.learning_skill
+                or args.hindsight_recall is not None
+                or args.hindsight_retain is not None
+            ):
                 from .native_config import UNSET, sync
 
+                learning = (
+                    _learning_policy(args)
+                    if args.learning or args.learning_skill
+                    else UNSET
+                )
                 hindsight = UNSET
                 if args.hindsight_url:
                     hindsight = {
@@ -202,7 +275,18 @@ def main(argv=None):
                     }
                 elif args.no_hindsight:
                     hindsight = None
-                sync(home, args.runtime, hindsight=hindsight)
+                sync(
+                    home,
+                    args.runtime,
+                    hindsight=hindsight,
+                    learning=learning,
+                    recall=args.hindsight_recall
+                    if args.hindsight_recall is not None
+                    else UNSET,
+                    retain=args.hindsight_retain
+                    if args.hindsight_retain is not None
+                    else UNSET,
+                )
             elif args.runtime:
                 core.configure(home, args.runtime)
             print(json.dumps(core.load(home), indent=2))
@@ -222,7 +306,9 @@ def main(argv=None):
             if args.dry_run:
                 print(json.dumps(launch))
             else:
-                return subprocess.run(launch["argv"], check=False, cwd=launch["cwd"]).returncode
+                return subprocess.run(
+                    launch["argv"], check=False, cwd=launch["cwd"]
+                ).returncode
         elif args.command == "skill":
             print(
                 core.install_skill(

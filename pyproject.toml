@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "soulsteads"
 version = "0.1.0"
-description = "Portable, locally versioned homes for coding agents"
+description = "Portable agent definitions mapped to native harness configuration"
 requires-python = ">=3.11"
 readme = "README.md"
 license = "Apache-2.0"

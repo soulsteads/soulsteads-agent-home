@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Your agent. Your files. No BS.</strong><br/>
-  A portable home for your coding agent’s identity, instructions, memory, and skills.
+  Define your agent once. Generate native configuration for your chosen harness.
 </p>
 
 <p align="center">
@@ -25,8 +25,10 @@
 ## Why Agent Home?
 
 Give your agent a home you can read, edit, and version—not another service to run.
-The small `soulsteads` CLI keeps its identity, instructions, local memory, skills,
-and project-level runtime configuration together in a local Git repository.
+The small `soulsteads` CLI maps one portable agent definition—identity, instructions,
+memory connections, skills, and learning preferences—into native configuration for
+pi, OpenCode, Codex, and Claude Code. The definition lives in a local Git repository;
+your chosen harness owns execution, sessions, tools, and permissions.
 
 - **Your files, on your machine.** Plain Markdown and local configuration, not a hosted account.
 - **Choose your runtime.** OpenCode, pi, Claude Code, or Codex. Install and authenticate it separately.
@@ -88,6 +90,7 @@ Each home has:
 - `skills/`: one portable skill tree, with optional verification and skill-maintenance starters.
 - `soulsteads.json`: name, launch default, manifest version, and generated-file ownership hashes.
 - Coexisting native configuration for all four harnesses and an initial local Git commit.
+- `LEARNING.md`: generated learning policy, off by default in new homes.
 
 New homes are private (`0700` directories, `0600` generated files; executable
 files in installed skills retain owner-only execute permission). No Git remote is added.
@@ -181,26 +184,66 @@ soulsteads verify helper
 ```
 
 The harness reads its native project MCP configuration and the token from its
-environment. Agent Home never copies the token into files, contacts the endpoint,
-starts a service, or ingests history. Verification checks only whether the referenced
-environment variable is set. Native trust/approval still applies. This prepares
-explicit memory-tool configuration, not live Hindsight qualification, automatic
-retention or recall injection. Remove owned
-project entries with `soulsteads config helper --no-hindsight`; bank data and global
-servers remain untouched. See the [runtime guide](docs/runtimes.md) for details.
+environment. Configuration and verification are offline; the token is never copied
+into generated files. Native trust/approval still applies.
+
+Opt in separately to recall at prompt submission and retention of captured prompts
+with completed assistant replies:
+
+```sh
+soulsteads config helper --hindsight-recall --hindsight-retain
+soulsteads config helper --no-hindsight-recall --no-hindsight-retain
+```
+
+Native command hooks (Claude/Codex), a plugin (OpenCode v1), or an extension
+(Pi's current lifecycle API) call the small `soulsteads memory-hook` helper.
+The helper uses the selected bank and environment credential. It excludes tool
+output, transcript files and Git history, bounds requests, and lets the task
+continue when memory is unavailable. Retention temporarily stores pending prompts
+in private, ignored `.runtime/hindsight/` files. Start fresh sessions after changes.
+
+Remove owned project entries and disable callbacks with
+`soulsteads config helper --no-hindsight`; bank data and global servers remain
+untouched. Live-bank persistence and native approval remain unqualified. See
+[automatic memory](docs/runtimes.md#automatic-hindsight-memory) for versions,
+limits and the distinction between hook execution and native MCP tool approvals.
 
 ### Skill improvement
 
-The bundled `skill-maintenance` procedure separates durable facts/preferences,
-reusable procedures, and temporary handoffs. It covers remember, correct, learn,
-and handoff without introducing a learning service. Its modes are **off**,
-**propose** (default), and **scoped-apply**; these are instruction conventions, not
-a permission-enforcement system. The harness uses its own native tools and applies
-changes only with explicit authority or a narrow preapproved scope. Generic
-self-improvement never authorizes identity, permission, credential, plugin, or
-schedule edits. Service-owned memory has no competing local writer.
-`--no-skills` omits both starter skills. Template and disposable-file checks do not
-establish that a model will follow the workflow.
+Learning is **off** in new homes. Enable proposals or preapprove small procedural
+corrections in explicitly named, existing skill files:
+
+```sh
+soulsteads create learner --runtime pi --learning propose
+soulsteads config helper --learning scoped-apply --learning-skill starter
+soulsteads config helper --learning off
+```
+
+`propose` shows suggested changes for review. `scoped-apply` covers only
+`skills/<name>/SKILL.md` for each repeated `--learning-skill`; it does not authorize
+supporting scripts, memory writes, identity/config changes, commits, or installation.
+The generated policy loads through each harness's native instruction mechanism.
+These modes are model-followed instructions; native permissions enforce access.
+There is no background learner. Existing homes without a learning setting keep
+their prior guidance until explicitly configured.
+
+The optional `skill-maintenance` starter separates facts/preferences, reusable
+procedures, and temporary handoffs. `--no-skills` omits both starter skills without
+changing the selected learning mode. See [learning configuration](docs/runtimes.md#learning-configuration)
+for refresh, scope, and qualification details.
+
+### Inspect adapter capabilities
+
+```sh
+soulsteads capabilities
+soulsteads capabilities --runtime pi
+soulsteads verify helper
+```
+
+`capabilities` reports supported mappings and qualification limits without needing
+a home or probing installed harnesses. `verify` also reports the home's effective
+learning mode and prepared native paths. See the [capability matrix](docs/runtimes.md#capability-matrix)
+for memory automation and project-selection limits.
 
 ## Track and restore
 
