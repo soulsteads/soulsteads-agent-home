@@ -248,17 +248,23 @@ Native wiring:
 
 - **Claude:** owned `UserPromptSubmit` and `Stop` callback groups in project
   `.claude/settings.json`. Unrelated callback groups and settings are preserved.
-- **Codex:** project `.codex/hooks.json` with the same command events and owned
-  `features.hooks = true` while enabled. Project trust and exact hook-definition
-  review remain native; no trust is granted by Soulsteads.
+- **Codex:** project `.codex/hooks.json` with the same command events and
+  `features.hooks = true` while enabled. Existing feature tables are merged without
+  losing unrelated flags or comments; their flags may be written as equivalent
+  root-level dotted keys. A preexisting user-owned `hooks = true` stays enabled
+  when memory is disabled. An explicit user `hooks = false` is a conflict, not
+  silently overridden. Project trust and exact hook-definition review remain
+  native; no trust is granted by Soulsteads.
 - **OpenCode:** `.opencode/plugins/soulsteads-memory.js` uses the **v1 plugin API**:
   `chat.message`, additive `experimental.chat.system.transform`, and `session.idle`.
   The SDK's assistant `parentID` must match the captured user message. OpenCode v2
   uses a different plugin API and is not supported for this automation mapping.
 - **Pi:** `.pi/extensions/soulsteads-memory.ts` uses `before_agent_start`,
-  `agent_end`, and final `agent_settled` to exclude aborted runs. These surfaces
-  were checked against maintained **1.5.2 source**; historical 1.4.0 identity/project
-  loader receipts do not qualify this new lifecycle integration.
+  `agent_end`, and final `agent_settled` to exclude aborted runs. Only a successful
+  `stop` reply is eligible for retention; output-limit fragments (`length`),
+  pending/deferred responses, and tool/error/aborted replies are excluded. These
+  surfaces were checked against maintained **1.5.2 source**; historical 1.4.0
+  identity/project loader receipts do not qualify this new lifecycle integration.
 
 The adapters invoke `soulsteads memory-hook`, so the installed CLI must be on the
 harness's PATH. No required launcher, daemon, installer, npm package, runtime

@@ -257,9 +257,105 @@ def validate_hindsight(value):
         )
 
 
+def _codex_feature_value(value):
+    """Encode native feature options, not an arbitrary TOML document."""
+    if isinstance(value, (str, bool, int)):
+        return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_codex_feature_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return (
+            "{ "
+            + ", ".join(
+                _codex_feature_value(key) + " = " + _codex_feature_value(item)
+                for key, item in value.items()
+            )
+            + " }"
+        )
+    raise ValueError("unsupported Codex feature option")
+
+
+def _codex_merge_features(desired, user_text):
+    """Keep user feature flags at the root when adding a managed dotted key."""
+    result = desired + user_text
+    try:
+        tomllib.loads(result)
+        return result
+    except tomllib.TOMLDecodeError:
+        flag = "features.hooks = true\n"
+        if flag not in desired:
+            raise
+    expected = tomllib.loads(desired.replace(flag, "") + user_text)
+    features = expected.setdefault("features", {})
+    if isinstance(features, dict) and features.get("hooks") is True:
+        # An independently enabled user flag stays outside our owned block,
+        # so disabling memory cannot disable their other native hooks.
+        return desired.replace(flag, "") + user_text
+    if not isinstance(features, dict) or "hooks" in features:
+        raise ValueError("conflicting Codex hooks feature")
+    user_features = dict(features)
+    features["hooks"] = True
+    # Inline feature maps may include typed option objects, not just booleans.
+    # The real TOML parser must prove every surrounding value is preserved.
+    dotted = "".join(
+        "features."
+        + _codex_feature_value(key)
+        + " = "
+        + _codex_feature_value(value)
+        + "\n"
+        for key, value in user_features.items()
+    )
+    for assignment in re.finditer(
+        r"(?m)^[ \t]*[^#\r\n][^\r\n]*=[^\r\n]*(?:\r?\n|$)", user_text
+    ):
+        try:
+            if tomllib.loads(assignment.group()) != {"features": user_features}:
+                continue
+            comment = "# " + assignment.group().rstrip("\r\n") + "\n"
+            merged = (
+                desired
+                + dotted
+                + user_text[: assignment.start()]
+                + comment
+                + user_text[assignment.end() :]
+            )
+            if tomllib.loads(merged) == expected:
+                return merged
+        except tomllib.TOMLDecodeError:
+            continue
+    # Do not parse arbitrary TOML with regular expressions. Locate candidate
+    # headers, then require the real parser to prove the entire merged value.
+    for header in re.finditer(r"(?m)^[ \t]*\[[^\r\n]*\][^\r\n]*(?:\r?\n|$)", user_text):
+        try:
+            if tomllib.loads(header.group()) != {"features": {}}:
+                continue
+            rest = user_text[header.end() :]
+            following = re.search(r"(?m)^[ \t]*\[", rest)
+            end = header.end() + following.start() if following else len(user_text)
+            body = user_text[header.end() : end]
+            dotted = "# " + header.group().rstrip("\r\n") + "\n"
+            for line in body.splitlines(keepends=True):
+                stripped = line.lstrip()
+                dotted += (
+                    line
+                    if not stripped.strip() or stripped.startswith("#")
+                    else line[: len(line) - len(stripped)] + "features." + stripped
+                )
+            if not dotted.endswith("\n"):
+                dotted += "\n"
+            merged = desired + dotted + user_text[: header.start()] + user_text[end:]
+            if tomllib.loads(merged) == expected:
+                return merged
+        except tomllib.TOMLDecodeError:
+            continue
+    raise ValueError("Codex features table requires manual review")
+
+
 def _codex(current, desired, expected):
     if current is None:
-        result = desired
+        user_text = ""
     elif current.startswith(CODEX_BEGIN):
         if current.count(CODEX_BEGIN) != 1 or current.count(CODEX_END) != 1:
             raise ValueError("invalid managed Codex block")
@@ -267,7 +363,7 @@ def _codex(current, desired, expected):
         old = current[:end]
         if digest(old) != expected and old != desired:
             raise ValueError("customized managed Codex block")
-        result = desired + current[end:]
+        user_text = current[end:]
     else:
         parsed = tomllib.loads(current)
         if (
@@ -276,9 +372,8 @@ def _codex(current, desired, expected):
             or CODEX_END in current
         ):
             raise ValueError("existing Codex instructions require manual review")
-        result = desired + "\n" + current
-    tomllib.loads(result)
-    return result
+        user_text = "\n" + current
+    return _codex_merge_features(desired, user_text)
 
 
 def configure_runtime(home, runtime):
@@ -419,6 +514,7 @@ def plan(
     ):
         raise core.HomeError("invalid native ownership metadata")
     writes = {}
+    ownership = {path: digest(text) for path, text in generated.items()}
     for relative in dict.fromkeys([*generated, *previous]):
         desired = generated.get(relative, "{}\n")
         try:
@@ -464,6 +560,10 @@ def plan(
                 )
             elif relative.endswith(".toml"):
                 result = _codex(current, desired, managed.get(relative))
+                # An existing user-owned hooks flag is not duplicated or adopted.
+                # Track the block we actually emitted, not the canonical template.
+                end = result.index(CODEX_END) + len(CODEX_END)
+                ownership[relative] = digest(result[:end])
             else:
                 if (
                     current is not None
@@ -480,7 +580,7 @@ def plan(
             raise core.HomeError(
                 f"native configuration conflict: {relative}; preserve your edits and review locally"
             ) from exc
-    return writes, {path: digest(text) for path, text in generated.items()}
+    return writes, ownership
 
 
 def _relative_parts(relative):
