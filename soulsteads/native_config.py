@@ -362,7 +362,9 @@ def configure_runtime(home, runtime):
 UNSET = object()
 
 
-def plan(home, manifest, *, hindsight=UNSET, read=None):
+def plan(
+    home, manifest, *, hindsight=UNSET, learning=UNSET, automation=UNSET, read=None
+):
     """Preflight every file before publication. Returns files and ownership hashes."""
     home = Path(home)
     read = read or _read
@@ -374,8 +376,39 @@ def plan(home, manifest, *, hindsight=UNSET, read=None):
         hindsight = previous_hindsight
     validate_hindsight(previous_hindsight)
     validate_hindsight(hindsight)
-    previous = render_all(documents, previous_hindsight)
-    generated = render_all(documents, hindsight)
+    from .learning import validate as validate_learning
+
+    previous_learning = manifest.get("learning")
+    if learning is UNSET:
+        learning = previous_learning
+    validate_learning(previous_learning)
+    validate_learning(learning)
+    if previous_learning is not None and learning is None:
+        raise core.HomeError("select learning off instead of removing its policy")
+    if learning is not None:
+        for name in learning["skills"]:
+            if read(home / "skills" / name / "SKILL.md") is None:
+                raise core.HomeError(
+                    "learning scope requires existing local skill files"
+                )
+    from .memory_automation import merge_hooks
+    from .memory_automation import validate as validate_automation
+
+    previous_automation = manifest.get("hindsight_automation")
+    if automation is UNSET:
+        automation = previous_automation
+        if hindsight is None and automation is not None:
+            automation = {"recall": False, "retain": False}
+    validate_automation(previous_automation, previous_hindsight)
+    validate_automation(automation, hindsight)
+    if previous_automation is not None and automation is None:
+        raise core.HomeError(
+            "disable recall and retention instead of removing their policy"
+        )
+    previous = render_all(
+        documents, previous_hindsight, previous_learning, previous_automation
+    )
+    generated = render_all(documents, hindsight, learning, automation)
     managed = manifest.get("managed_files", {})
     if not isinstance(managed, dict) or any(
         not isinstance(path, str)
@@ -391,12 +424,38 @@ def plan(home, manifest, *, hindsight=UNSET, read=None):
         try:
             current = read(home / relative)
             if relative.endswith(".json"):
-                value = _merge_json(
+                actual, target, old = (
                     _json(current or "{}"),
                     _json(desired),
                     _json(previous.get(relative, "{}")),
+                )
+                native_hooks = relative in (
+                    ".claude/settings.json",
+                    ".codex/hooks.json",
+                )
+                if native_hooks:
+                    hooks = merge_hooks(
+                        actual.get("hooks", {}),
+                        target.get("hooks", {}),
+                        old.get("hooks", {}),
+                        managed=relative in managed and current is not None,
+                    )
+                value = _merge_json(
+                    {
+                        k: v
+                        for k, v in actual.items()
+                        if not native_hooks or k != "hooks"
+                    },
+                    {
+                        k: v
+                        for k, v in target.items()
+                        if not native_hooks or k != "hooks"
+                    },
+                    {k: v for k, v in old.items() if not native_hooks or k != "hooks"},
                     managed=relative in managed and current is not None,
                 )
+                if native_hooks and (hooks or "hooks" in target):
+                    value["hooks"] = hooks
                 # Preserve original formatting when no settings changed.
                 result = (
                     current
@@ -602,7 +661,16 @@ def _verify_for_publish(
             _check_leaf(parent_fds[parts[:-1]], parts[-1], snapshot.states[key])
 
 
-def sync(home, runtime=None, *, hindsight=UNSET):
+def sync(
+    home,
+    runtime=None,
+    *,
+    hindsight=UNSET,
+    learning=UNSET,
+    automation=UNSET,
+    recall=UNSET,
+    retain=UNSET,
+):
     """Refresh native projections through the cooperative publication lock."""
     from . import publication
 
@@ -617,6 +685,10 @@ def sync(home, runtime=None, *, hindsight=UNSET):
                 home,
                 runtime,
                 hindsight=hindsight,
+                learning=learning,
+                automation=automation,
+                recall=recall,
+                retain=retain,
                 root_fd=root_fd,
                 root_chain=root_chain,
             )
@@ -624,7 +696,18 @@ def sync(home, runtime=None, *, hindsight=UNSET):
         os.close(root_fd)
 
 
-def _sync_locked(home, runtime=None, *, hindsight=UNSET, root_fd=None, root_chain=None):
+def _sync_locked(
+    home,
+    runtime=None,
+    *,
+    hindsight=UNSET,
+    learning=UNSET,
+    automation=UNSET,
+    recall=UNSET,
+    retain=UNSET,
+    root_fd=None,
+    root_chain=None,
+):
     """Plan and publish native projections while caller holds home lock."""
     from . import publication
     from .runtimes import RUNTIMES
@@ -645,12 +728,42 @@ def _sync_locked(home, runtime=None, *, hindsight=UNSET, root_fd=None, root_chai
             if runtime not in RUNTIMES:
                 raise core.HomeError("unsupported runtime")
             manifest["runtime"] = runtime
-        writes, managed = plan(home, manifest, hindsight=hindsight, read=snapshot.read)
+        if recall is not UNSET or retain is not UNSET:
+            if automation is not UNSET:
+                raise core.HomeError(
+                    "choose either a full automation policy or individual flags"
+                )
+            automation = dict(
+                manifest.get("hindsight_automation")
+                or {"recall": False, "retain": False}
+            )
+            if recall is not UNSET:
+                automation["recall"] = recall
+            if retain is not UNSET:
+                automation["retain"] = retain
+        if (
+            hindsight is None
+            and automation is UNSET
+            and manifest.get("hindsight_automation") is not None
+        ):
+            automation = {"recall": False, "retain": False}
+        writes, managed = plan(
+            home,
+            manifest,
+            hindsight=hindsight,
+            learning=learning,
+            automation=automation,
+            read=snapshot.read,
+        )
         if hindsight is not UNSET:
             if hindsight is None:
                 manifest.pop("hindsight", None)
             else:
                 manifest["hindsight"] = hindsight
+        if learning is not UNSET:
+            manifest["learning"] = learning
+        if automation is not UNSET:
+            manifest["hindsight_automation"] = automation
         manifest["managed_files"] = managed
         manifest_text = json.dumps(manifest, indent=2) + "\n"
         if snapshot.read(home / "soulsteads.json") != manifest_text:

@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 
 from . import core
+from .capabilities import for_runtime
 from .hermes_import import Snapshot, _absolute
 from .runtimes import RUNTIMES, SKILL_LINKS, render
 
@@ -60,6 +61,17 @@ def verify_home(home):
         ):
             raise ValueError("invalid manifest")
         runtime = manifest["runtime"]
+        from .learning import validate as validate_learning
+        from .native_config import plan, validate_hindsight
+
+        learning = manifest.get("learning")
+        validate_learning(learning)
+        validate_hindsight(manifest.get("hindsight"))
+        from .memory_automation import enabled
+        from .memory_automation import validate as validate_automation
+
+        automation = manifest.get("hindsight_automation")
+        validate_automation(automation, manifest.get("hindsight"))
         for filename in core._PERSONA_FILES:
             raw = snap.read(home / filename)
             if raw is None:
@@ -78,7 +90,12 @@ def verify_home(home):
                 "Required identity files are readable.",
                 "Confirm actual instruction loading in a separately authorized runtime test.",
             )
-        for filename in render(runtime):
+        for filename in render(
+            runtime,
+            hindsight=manifest.get("hindsight"),
+            learning=learning,
+            automation=automation,
+        ):
             raw = snap.read(home / filename)
             if raw is None:
                 add(
@@ -102,7 +119,6 @@ def verify_home(home):
                 "Adapter files have valid basic syntax.",
                 "Native configuration semantics, dependencies and credentials remain unverified.",
             )
-        from .native_config import plan
 
         def native_read(path):
             raw = snap.read(path)
@@ -122,7 +138,14 @@ def verify_home(home):
         adapters = [
             {
                 "runtime": name,
-                "paths": list(render(name)),
+                "paths": list(
+                    render(
+                        name,
+                        hindsight=manifest.get("hindsight"),
+                        learning=learning,
+                        automation=automation,
+                    )
+                ),
                 "skill_paths": list(SKILL_LINKS),
                 "mechanism": "native reference"
                 if name in ("opencode", "claude")
@@ -132,9 +155,27 @@ def verify_home(home):
                 "mode": "home-root",
                 "reload": "Start a fresh native session after an explicit refresh; resume and compaction are unverified.",
                 "trust": "Native project trust, MCP approval and permission settings remain authoritative.",
+                "capabilities": for_runtime(name),
+                "learning": {
+                    "mode": learning["mode"]
+                    if learning is not None
+                    else "legacy-guidance",
+                    "target_count": len(learning["skills"])
+                    if learning is not None
+                    else 0,
+                },
+                "memory_automation": automation or {"recall": False, "retain": False},
             }
             for name in RUNTIMES
         ]
+        add(
+            "learning-policy",
+            "passed",
+            "The explicit learning policy has valid structure and existing scope targets."
+            if learning is not None
+            else "No explicit learning mode is configured; existing guidance is retained.",
+            "Review the selected mode and diff; native permissions enforce access and model behavior remains unverified.",
+        )
         if manifest.get("hindsight") is not None:
             # plan() has already validated this reference. Never echo its values.
             present = bool(os.environ.get(manifest["hindsight"]["token_env"]))
@@ -151,6 +192,13 @@ def verify_home(home):
                 "needs-review",
                 "MCP configuration is prepared, not live Hindsight qualification or native approval.",
                 "Use a separately authorized synthetic bank to test discovery, explicit recall and retain, and exact-bank readback; check native approval and server availability. Old Pi packages without native MCP are unsupported.",
+            )
+        if enabled(automation):
+            add(
+                "memory-automation-qualification",
+                "needs-review",
+                "Native memory callbacks are configured; live injection, retention and hook trust are unverified.",
+                "Review the generated code, approve native hooks/extensions, and qualify against an authorized synthetic bank before use. Restart sessions after policy changes.",
             )
         aliases = {}
         for relative, target in SKILL_LINKS.items():

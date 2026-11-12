@@ -5,6 +5,46 @@ tools, permissions, approvals and integrations. There is no Soulsteads prompt
 interceptor, memory daemon or required launcher. Global harness configuration and
 authentication remain active; a Home is not a sandbox.
 
+## Capability matrix
+
+Soulsteads compiles one portable definition into native files. Canonical Markdown
+and `skills/` describe the agent; `soulsteads.json` selects its launch default,
+optional Hindsight connection and learning policy. Native files are projections
+or references, not a second editable agent definition. OpenClaw/Hermes-style
+identity, memory and skill conventions do not imply full runtime parity.
+
+| Capability | OpenCode | Pi | Codex | Claude Code |
+| --- | --- | --- | --- | --- |
+| SOUL/USER/curated MEMORY | Native `instructions` paths | Generated additive `APPEND_SYSTEM.md` | Generated additive `developer_instructions` | Native `CLAUDE.md` imports |
+| Portable skills | Native `.agents/skills` alias | Native `.agents/skills` alias | Native `.agents/skills` alias | Native `.claude/skills` alias |
+| Optional Hindsight tools | Native MCP config | Maintained Pi native MCP config | Native MCP config | Native MCP config |
+| Learning modes | Model-followed policy through native instructions | Same, included in generated projection | Same, included in generated projection | Model-followed policy through native imports |
+| Opt-in automatic recall/retention | V1 lifecycle plugin | Current lifecycle extension | Native command hooks | Native command hooks |
+| Home identity/skills with separate project cwd | Unqualified | Qualified native resource loading, 1.4.0 only | Unqualified | Unqualified |
+| Model behavior, resume and compaction | Unverified | Unverified | Unverified | Unverified |
+
+Skill discovery does not translate Hermes-specific tools, scripts, services or
+permissions. Inspect imported dependencies and report unsupported requirements.
+Hindsight registration alone is config support, not live connectivity. Automatic
+memory is a separate opt-in mapping described below; its adapters have synthetic
+protocol and native-event fixture coverage, not full native-session qualification.
+Native-loader evidence for identity/skills and its exact versions is
+recorded in [native acceptance](native-acceptance.md). Configurable learning policy
+has source/disposable-Home coverage only; its new content has not been separately
+qualified in native sessions.
+
+```sh
+soulsteads capabilities
+soulsteads capabilities --runtime pi
+soulsteads verify helper
+```
+
+`capabilities` emits a versioned JSON matrix without reading an agent Home,
+probing an installed runtime, or contacting a provider. Historical qualified
+versions do not identify your installed version. `verify` adds capabilities and
+the effective learning mode/target count to each adapter, without exposing skill
+target names, document contents or connection values.
+
 ## Direct launch and refresh
 
 New Homes contain native files for all four harnesses. `--runtime` selects only the
@@ -84,10 +124,65 @@ qualified. Harness versions may warn about duplicate discovery.
 
 Fresh Homes include original `starter` and `skill-maintenance` procedures unless
 created with `--no-skills`. Skill maintenance is executed by the harness's own file
-and shell tools. It proposes improvements after useful corrections, applies only
+and shell tools when the selected learning mode permits it. It proposes improvements
+after useful corrections, applies only
 explicitly authorized or preapproved skill edits, validates them, and commits only
 with authority. It does not install plugins, run a background learner, or expand
 permissions. Existing/imported skills are not silently replaced with starters.
+
+## Learning configuration
+
+New and newly imported Homes have an explicit `off` learning policy. Existing
+Homes without a `learning` field retain their existing guidance, including the
+older starter's proposal convention. Plain `--sync` does not opt those Homes into
+a mode or rewrite their canonical instructions or skills.
+
+```sh
+soulsteads create helper --runtime pi --learning propose
+soulsteads config helper --learning scoped-apply \
+  --learning-skill starter --learning-skill skill-maintenance
+soulsteads config helper --learning off
+```
+
+- **off:** do not initiate durable-guidance proposals or edits as a side effect
+  of normal work. Explicit user requests to edit guidance are still ordinary tasks.
+- **propose:** suggest one evidence-backed procedural improvement with its target,
+  reason and proposed diff; wait for explicit authority before persisting it.
+- **scoped-apply:** preapprove small procedural corrections only to the existing
+  `skills/<name>/SKILL.md` files explicitly named by repeated `--learning-skill`.
+  Preserve metadata, validate corrections, and report each applied diff and evidence.
+
+Every `--learning scoped-apply` selection requires its complete target list;
+other modes reject targets. A bare `--sync` retains the stored mode and scope.
+Targets must be unique local skill names, not paths or patterns, and their files
+must exist. New Homes may name only the bundled skills actually being created;
+install other inspected local skills first, then configure them. `--no-skills`
+omits starters without overriding the learning mode. No skill is installed or
+executed by selecting a policy. Missing scoped targets fail sync/verification;
+select `off` or a new valid scope to remove a stale target.
+
+The manifest stores, for example:
+
+```json
+{"learning": {"mode": "scoped-apply", "skills": ["starter"]}}
+```
+
+Soulsteads generates owned `LEARNING.md` from that setting. OpenCode adds it to
+`instructions`, Claude imports it from `CLAUDE.md`, and Pi/Codex include its text
+in their existing additive instruction projections. The policy selects the mode
+ahead of generic starter/imported learning guidance. Existing canonical Markdown
+and installed skills remain user-maintained. Edit the setting with `config`, not
+the generated policy; owned-file conflicts are refused before publication.
+Changes use the same [publication contract](publication-contract.md) as identity
+and memory configuration. Review the diff and start a fresh native session.
+
+This is a skill-learning instruction convention. Scope is checked when compiling
+configuration, but Soulsteads does not mediate the harness's later file writes.
+Native permissions and approvals remain authoritative. The policy excludes
+supporting scripts, identity/config changes, permissions, credentials, plugins,
+schedules, installations, commits and external actions. It grants no memory-write
+or Hindsight-retention authority. Curated facts, service-owned memory and temporary
+handoffs remain separate. No lifecycle hook or background learner is installed.
 
 ## Explicit Hindsight tools
 
@@ -101,7 +196,8 @@ soulsteads config helper \
 
 Supply the token to the harness through your approved secret/environment mechanism.
 Agent Home stores only its environment-variable **name** and never copies the
-credential into configuration or contacts the endpoint. The offline verifier
+credential into configuration. Config and verification do not contact the endpoint;
+opted-in runtime callbacks do. The offline verifier
 checks whether the variable is nonempty, without reporting its value; this does
 not validate the credential. `HINDSIGHT_API_TOKEN` is the default reference.
 URLs must be HTTPS, with a per-bank `/mcp/<bank>/` path and no userinfo, query or
@@ -119,9 +215,8 @@ Native output:
 
 The harness owns MCP connection, tool discovery, approval and invocation. Project
 MCP configuration may require native approval. This feature does not change global
-servers, install Hindsight packages, start a service, auto-retain conversations,
-ingest Git history, or claim automatic recall. A native plugin/hook integration
-would be a separate opt-in feature with its own version and lifecycle tests.
+servers, install Hindsight packages, start a service, or ingest Git history.
+Automatic recall and retention require the separate opt-in below.
 
 ```sh
 soulsteads config helper --no-hindsight
@@ -132,6 +227,83 @@ It does not delete bank data, revoke credentials, disconnect a running session, 
 remove a global server. Inspect native configuration precedence if a global
 `hindsight` server remains. Root MEMORY.md stays distinct from external Hindsight
 and each harness's built-in automatic memory.
+
+## Automatic Hindsight memory
+
+After configuring a bank, select either operation independently:
+
+```sh
+soulsteads config helper --hindsight-recall --hindsight-retain
+soulsteads config helper --no-hindsight-retain
+soulsteads config helper --no-hindsight-recall
+```
+
+Both default to off, including in existing Homes. The manifest stores
+`"hindsight_automation": {"recall": true, "retain": true}`. Each flag changes only
+its own setting under the cooperative configuration lock. `--no-hindsight` also
+disables both operations. Configuration stays offline and uses the existing
+checked publisher, ownership/conflict rules, and canonical Git lifecycle.
+
+Native wiring:
+
+- **Claude:** owned `UserPromptSubmit` and `Stop` callback groups in project
+  `.claude/settings.json`. Unrelated callback groups and settings are preserved.
+- **Codex:** project `.codex/hooks.json` with the same command events and owned
+  `features.hooks = true` while enabled. Project trust and exact hook-definition
+  review remain native; no trust is granted by Soulsteads.
+- **OpenCode:** `.opencode/plugins/soulsteads-memory.js` uses the **v1 plugin API**:
+  `chat.message`, additive `experimental.chat.system.transform`, and `session.idle`.
+  The SDK's assistant `parentID` must match the captured user message. OpenCode v2
+  uses a different plugin API and is not supported for this automation mapping.
+- **Pi:** `.pi/extensions/soulsteads-memory.ts` uses `before_agent_start`,
+  `agent_end`, and final `agent_settled` to exclude aborted runs. These surfaces
+  were checked against maintained **1.5.2 source**; historical 1.4.0 identity/project
+  loader receipts do not qualify this new lifecycle integration.
+
+The adapters invoke `soulsteads memory-hook`, so the installed CLI must be on the
+harness's PATH. No required launcher, daemon, installer, npm package, runtime
+permission change or global config is added. Generated extension files stay
+owned and reproducible when disabled; their manifest guard disarms them. Owned
+command registrations are removed, preserving other groups. Stop and restart
+native sessions after changes, review generated code and use native trust/approval
+flows. Only **Home-root sessions** are supported for automatic memory. Pi's separate
+project selector does not forward the Home extension or MCP connection.
+
+Recall sends the captured prompt to the configured per-bank MCP `recall` tool
+with low search budget and a 1,000-token request budget. Returned reference text is
+bounded to 6,000 characters and explicitly marked as untrusted data. Command hooks
+return native `additionalContext`; Pi adds a hidden native custom message, and
+OpenCode appends to the existing system context. No built-in prompt is replaced.
+
+Retention captures a prompt only when enabled, then submits it and a completed
+assistant reply to the same bank's `retain` tool. It never opens `transcript_path`,
+reads Git history, or sends tool/reasoning/image attachments. Text is bounded to
+32 KiB per speaker; oversized or missing text is skipped. Native template/skill
+expansion can be part of the captured prompt, and secrets typed into ordinary text
+are not filtered. This opt-in authorizes that prompt/reply transfer, independently
+of the learning mode. Hook network calls use the environment credential directly;
+native MCP tool-invocation approval does not separately gate these hook HTTP calls.
+
+Pending prompts live in `0700` `.runtime/hindsight/` with `0600` files named by
+hashed runtime/session IDs. This directory is ignored by Git. The raw prompt is
+cleared before the first retention attempt; duplicate callbacks do not retry it,
+even if the service timed out after receiving it. Bank changes invalidate pending
+turns, and prompts older than 24 hours are ineligible. Unfinished prompts can remain
+in private storage until replaced or manually removed; expiry is not disk erasure.
+No competing durable `MEMORY.md` copy or background ingestion is created.
+
+The helper implements bounded MCP initialization, JSON/SSE responses and session
+headers using the Python standard library. It refuses HTTP redirects, keeps TLS
+verification, uses short network deadlines, and emits content-free failure notices
+with empty native hook output. Memory failure never requests a continuation or
+blocks a task. Retention is best-effort, at most one attempt per captured turn;
+it is not an exactly-once or durable-delivery guarantee. Concurrent prompts in one
+session, session resume/compaction and cancellation timing need native qualification.
+
+Protocol tests use only a synthetic loopback server, and JavaScript adapter tests
+use fake native events and a stub helper. Actual harness activation, live Hindsight
+persistence and end-to-end model use remain unverified and are reported separately
+by `verify` and `capabilities`. No ordinary test accesses a real memory bank.
 
 ## Verification boundaries
 
@@ -187,6 +359,31 @@ does not provide the current native MCP surface; do not infer support from its
 are not qualified here.
 
 ## First-party references
+
+The configurable learning policy reuses existing native instruction surfaces;
+it introduces no harness-specific learning setting. Rechecked on 2026-11-11:
+OpenCode's [configuration schema](https://opencode.ai/config.json) defines
+`instructions` as an array of paths/URLs; Claude's
+[memory reference](https://code.claude.com/docs/en/memory.md) documents relative
+`@path/to/import` expansion; maintained Pi's
+[configuration source](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/configuration.md)
+documents additive `APPEND_SYSTEM.md`; the official OpenAI
+[configuration reference](https://developers.openai.com/codex/config-reference/)
+defines `developer_instructions` as additional session developer instructions.
+These field checks do not extend the historical native-session qualification to
+the newly generated learning content or to newer installed client versions.
+
+Automatic-memory fields/events were checked on 2026-11-11 against the official
+OpenAI [hooks guide](https://developers.openai.com/codex/hooks/) and
+[config reference](https://developers.openai.com/codex/config-reference/), Claude's
+[hooks reference](https://code.claude.com/docs/en/hooks), maintained Pi's
+[extension reference](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)
+(1.5.2 source), the published OpenCode
+[v1 plugin interface](https://unpkg.com/@opencode-ai/plugin@1.19.4/dist/index.d.ts)
+and [SDK message types](https://unpkg.com/@opencode-ai/sdk@1.19.4/dist/v2/gen/types.gen.d.ts),
+and Hindsight's [per-bank MCP/tool reference](https://github.com/vectorize-io/hindsight/blob/main/hindsight-docs/docs/developer/mcp-server.md).
+Current documentation/source checks and synthetic fixtures are not installed-client
+qualification. Older clients without those events cannot provide this automation.
 
 - OpenCode: [config](https://opencode.ai/docs/config/),
   [rules](https://opencode.ai/docs/rules/), [skills](https://opencode.ai/docs/skills/),

@@ -21,7 +21,9 @@ specify another location; do not store project output in this home without a rea
   separate retrieval system only if configured; do not assume it is enabled or
   treat it as a substitute for reviewing authorized files.
 - After a user correction or nontrivial work, consider whether a focused reusable
-  skill change would prevent recurrence. Propose self-improvement by default;
+  skill change would prevent recurrence. If LEARNING.md is present, follow its
+  selected learning mode and scope, including off. Otherwise propose
+  self-improvement by default;
   apply a change only with explicit user authority or a clearly preapproved scope.
   Preserve identity, security, privacy, and permission boundaries.
 - Validate changes and report what was tested, what failed, and what remains
@@ -65,6 +67,10 @@ description: Use when remembering a durable fact, correcting guidance, learning 
    supported interface only when available and authorized; otherwise leave it alone.
 
 ## Choose a learning mode before changing anything
+
+If LEARNING.md is present in the agent Home, follow its configured mode and
+targets before using this procedure. It takes precedence over the fallback
+mode below. Resolve targets against the Home even when working in another project.
 
 - **off**: do not propose or apply a learning change.
 - **propose**: propose is the default. Show the target, reason, smallest proposed change, and

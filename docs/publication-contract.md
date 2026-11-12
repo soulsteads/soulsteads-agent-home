@@ -52,7 +52,8 @@ lock serializes cooperating Soulsteads configuration writers only.
 - Runtime-only `core.configure` uses retained-root admission and the same file
   publisher without refreshing native projections. The clean-tree requirement
   remains; runtime selection does not erase another adapter's custom settings.
-- `native_config.sync` handles explicit refresh and Hindsight add/update/remove
+- `native_config.sync` handles explicit refresh, learning policy, Hindsight add/update/remove
+  and opt-in native memory callback configuration (including owned hook-group merges)
   through one pure native-file plan followed by checked publication.
 - Import finalization refreshes imported identity through that same path before
   the existing Linux-only, no-replace outer-directory publication. Private

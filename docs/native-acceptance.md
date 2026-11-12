@@ -7,6 +7,13 @@ Hindsight bank is part of acceptance.
 
 ## Versioned native evidence
 
+The native receipts below predate the configurable `LEARNING.md` policy.
+Learning modes, scope checks, projections and capability reporting have source
+and disposable-Home test coverage. The new policy content has not been separately
+qualified in native sessions, and no model-following or enforced edit-scope claim
+is made. `capabilities` identifies the historical loader versions separately from
+the unprobed installed version; see the [matrix](runtimes.md#capability-matrix).
+
 The current qualification work distinguishes source tests, native resource loading,
 request construction, and completed model behavior. Source/wheel test receipts and
 the exact reviewed candidate are recorded with the feature PR; this document does
@@ -88,7 +95,18 @@ reran that probe independently. The server was a protocol fixture, **not a live
 Hindsight deployment**. It does not establish native tool approval, Hindsight
 persistence/authorization, or end-to-end configuration/credential expansion for
 all four harnesses. Live memory remains unqualified. No ordinary test touches a
-live bank, and no automatic ingestion, recall injection, or retention is enabled.
+live bank. Automatic recall/retention is now separately opt-in; these older native
+receipts do not qualify its execution.
+
+New automatic-memory tests exercise the actual Python helper against a synthetic
+HTTP MCP server, including initialization/session headers, JSON/SSE recall,
+prompt/reply retention, duplicate suppression, redirects, bounds and sanitized
+failures. Generated Pi/OpenCode code is executed against fake lifecycle APIs with
+a stub helper, including cancelled runs and tool-output filtering. Configuration
+tests cover opt-in/out, unrelated hook preservation, owned-hook conflicts and
+concurrent flag updates. These are protocol/adapter fixtures, not native harness,
+model, or live Hindsight acceptance. Pi's new adapter references 1.5.2 lifecycle
+source, and OpenCode automation targets the v1 plugin API only.
 
 ## Reproduce the opt-in OpenCode/Claude check
 

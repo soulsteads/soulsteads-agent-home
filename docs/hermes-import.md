@@ -5,6 +5,12 @@ Soulsteads agent home. Inspection is read-only by default. Applying an import
 creates files and local Git history; it does not run the agent, install a service,
 authenticate a provider, or move a messaging connection.
 
+Newly imported Homes start with learning off. After reviewing the imported skills,
+select `soulsteads config <home> --learning propose` or an explicitly named
+`scoped-apply` policy. The generated policy takes precedence over generic imported
+learning guidance; it does not translate Hermes-only tools or grant permissions.
+See [learning configuration](runtimes.md#learning-configuration).
+
 Inspection uses POSIX file-safety checks. **Applying imports currently requires
 Linux with `renameat2`** for atomic no-overwrite publication; unsupported platforms
 refuse rather than fall back to a replacement rename.
