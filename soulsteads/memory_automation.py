@@ -189,7 +189,7 @@ export default function SoulsteadsMemory(pi) {
   pi.on("agent_end", async (event, ctx) => {
     replies.delete(ctx.sessionManager.getSessionId());
     const reply = (event.messages || []).filter(m => m.role === "assistant").at(-1);
-    if (reply && !["error", "aborted", "toolUse"].includes(reply.stopReason))
+    if (reply && reply.stopReason === "stop")
       replies.set(ctx.sessionManager.getSessionId(), text(reply.content));
   });
   pi.on("agent_settled", async (event, ctx) => {

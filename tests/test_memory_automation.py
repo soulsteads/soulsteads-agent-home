@@ -204,6 +204,140 @@ class MemoryAutomationTests(unittest.TestCase):
         findings = {f["id"]: f["status"] for f in verify_home(self.home)["findings"]}
         self.assertEqual(findings["memory-automation-qualification"], "needs-review")
 
+    def test_codex_feature_table_survives_automation_transitions(self):
+        path = self.home / ".codex/config.toml"
+        path.write_text(
+            path.read_text() + '\nmodel = "synthetic"\n[features]\nmulti_agent = true\n'
+        )
+        sync(self.home, hindsight=self.settings)
+        for enabled in (True, False, True):
+            with self.subTest(enabled=enabled):
+                flag = "--hindsight-recall" if enabled else "--no-hindsight-recall"
+                code, _, error = self.invoke("config", str(self.home), flag)
+                self.assertEqual(code, 0, error)
+                parsed = tomllib.loads(path.read_text())
+                self.assertEqual(parsed["model"], "synthetic")
+                self.assertEqual(
+                    parsed["features"],
+                    {"multi_agent": True, **({"hooks": True} if enabled else {})},
+                )
+                self.assertEqual(sync(self.home), [])
+        self.assertEqual(self.calls, [])
+
+    def test_codex_preexisting_hooks_flag_remains_user_owned(self):
+        path = self.home / ".codex/config.toml"
+        user_text = (
+            "\n# Keep native hooks enabled independently of memory.\n"
+            "[features]\nhooks = true\nmulti_agent = true\n"
+            "[custom]\nflag = true\n"
+        )
+        path.write_text(path.read_text() + user_text)
+        for enabled in (True, False, True, False):
+            with self.subTest(enabled=enabled):
+                sync(
+                    self.home,
+                    hindsight=self.settings,
+                    automation={"recall": enabled, "retain": enabled},
+                )
+                self.assertTrue(path.read_text().endswith(user_text))
+                self.assertEqual(
+                    tomllib.loads(path.read_text())["features"],
+                    {"hooks": True, "multi_agent": True},
+                )
+                self.assertEqual(sync(self.home), [])
+                findings = {
+                    item["id"]: item["status"]
+                    for item in verify_home(self.home)["findings"]
+                }
+                self.assertEqual(findings["native-projections"], "passed")
+        self.assertEqual(self.calls, [])
+        path.write_text(
+            path.read_text().replace("# Agent Home identity", "# Customized")
+        )
+        before = self.snapshot()
+        code, _, _ = self.invoke("config", str(self.home), "--hindsight-recall")
+        self.assertEqual(code, 1)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_codex_feature_merge_preserves_native_values(self):
+        user_texts = (
+            "\n[features]\n",
+            "\nfeatures.multi_agent = true\n",
+            "\nfeatures = { multi_agent = true } # existing inline flags\n",
+            "\nfeatures = { hooks = true, multi_agent = true }\n",
+            (
+                "\nfeatures = { code_mode = { enabled = true, "
+                "default_exec_yield_time_ms = 2000, "
+                'direct_only_tool_namespaces = ["synthetic"] }, '
+                "multi_agent = true } # preserve typed feature options\n"
+            ),
+            (
+                '\nnotes = """\n[features]\nnot a table\n"""\n'
+                '[model_providers.synthetic]\nname = "Synthetic"\n'
+                "[ 'features' ] # preserve this comment\n"
+                '"multi_agent" = true # and this one\n'
+                "[custom]\nflag = true\n"
+            ),
+        )
+        for index, user_text in enumerate(user_texts):
+            with self.subTest(index=index):
+                home = core.create("helper", "pi", path=self.root / f"native-{index}")
+                path = home / ".codex/config.toml"
+                path.write_text(path.read_text() + user_text)
+                original = tomllib.loads(user_text)
+                for enabled in (True, False, True):
+                    sync(
+                        home,
+                        hindsight=self.settings,
+                        automation={"recall": enabled, "retain": False},
+                    )
+                    parsed = tomllib.loads(path.read_text())
+                    expected_features = dict(original.get("features", {}))
+                    if enabled:
+                        expected_features["hooks"] = True
+                    self.assertEqual(parsed.get("features", {}), expected_features)
+                    for key, value in original.items():
+                        if key != "features":
+                            self.assertEqual(parsed[key], value)
+                    self.assertEqual(sync(home), [])
+                if "preserve this comment" in user_text:
+                    self.assertIn("preserve this comment", path.read_text())
+                    self.assertIn("and this one", path.read_text())
+        self.assertEqual(self.calls, [])
+
+    def test_codex_disabled_user_hooks_refuse_automation_without_writes(self):
+        path = self.home / ".codex/config.toml"
+        path.write_text(path.read_text() + "\n[features]\nhooks = false\n")
+        sync(self.home, hindsight=self.settings)
+        before = self.snapshot()
+        code, _, _ = self.invoke("config", str(self.home), "--hindsight-recall")
+        self.assertEqual(code, 1)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.calls, [])
+
+    def test_codex_exact_desired_prefix_recovers_after_manifest_failure(self):
+        from soulsteads import publication
+
+        self.configure(retain=False)
+        publish = publication.publish_file
+
+        def fail_manifest(parent_fd, name, *args, **kwargs):
+            if name == "soulsteads.json":
+                raise OSError("Synthetic manifest failure")
+            return publish(parent_fd, name, *args, **kwargs)
+
+        options = {"learning": {"mode": "propose", "skills": []}}
+        with (
+            patch("soulsteads.publication.publish_file", side_effect=fail_manifest),
+            self.assertRaisesRegex(core.HomeError, "partially applied"),
+        ):
+            sync(self.home, **options)
+        self.assertEqual(core.load(self.home)["learning"]["mode"], "off")
+        sync(self.home, **options)
+        self.assertEqual(sync(self.home), [])
+        self.assertEqual(core.load(self.home)["learning"]["mode"], "propose")
+        self.assertEqual(self.calls, [])
+
     def test_disabling_preserves_other_native_hooks_and_disarms_extensions(self):
         self.configure()
         other = {"hooks": [{"type": "command", "command": "echo synthetic-other"}]}
@@ -451,6 +585,14 @@ class NativeMemoryEventTests(unittest.TestCase):
     def test_generated_pi_and_opencode_adapters_use_native_events_and_filter_tools(
         self,
     ):
+        self.exercise_generated_adapters(())
+
+    def test_pi_retains_only_successful_complete_replies(self):
+        self.exercise_generated_adapters(
+            ("length", "error", "aborted", "toolUse", "pending", "deferred")
+        )
+
+    def exercise_generated_adapters(self, excluded_reasons):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             home = core.create("helper", "pi", path=root / "home")
@@ -476,7 +618,7 @@ class NativeMemoryEventTests(unittest.TestCase):
             pi_module.write_text(pi_path.read_text())
             script.write_text(r"""
 import assert from "node:assert/strict";
-const [piUrl, ocUrl, home] = process.argv.slice(2);
+const [piUrl, ocUrl, home, excludedReasons] = process.argv.slice(2);
 const handlers = new Map();
 const ctx = { sessionManager: { getSessionId: () => "fixture-session" } };
 const pi = (await import(piUrl)).default;
@@ -486,6 +628,11 @@ assert.equal(injected.message.content, "Synthetic recalled context");
 assert.equal(injected.message.display, false);
 await handlers.get("agent_end")({ messages: [{ role: "assistant", stopReason: "stop", content: [{type:"text",text:"Synthetic pi reply"},{type:"toolCall",text:"PRIVATE TOOL"}] }] }, ctx);
 await handlers.get("agent_settled")({ aborted: true }, ctx);
+for (const reason of JSON.parse(excludedReasons)) {
+  await handlers.get("before_agent_start")({ prompt: "Synthetic incomplete prompt" }, ctx);
+  await handlers.get("agent_end")({ messages: [{ role: "assistant", stopReason: reason, content: [{type:"text",text:"INCOMPLETE REPLY MUST NOT BE RETAINED"}] }] }, ctx);
+  await handlers.get("agent_settled")({ aborted: reason === "aborted" }, ctx);
+}
 await handlers.get("before_agent_start")({ prompt: "Synthetic final prompt" }, ctx);
 await handlers.get("agent_end")({ messages: [{ role: "assistant", stopReason: "stop", content: [{type:"text",text:"Synthetic final reply"}] }] }, ctx);
 await handlers.get("agent_settled")({ aborted: false }, ctx);
@@ -507,6 +654,7 @@ await hooks.event({event:{type:"session.idle",properties:{sessionID:"fixture-ses
                     pi_module.as_uri(),
                     (home / PLUGIN_PATHS["opencode"]).as_uri(),
                     str(home),
+                    json.dumps(excluded_reasons),
                 ],
                 capture_output=True,
                 text=True,
@@ -521,7 +669,10 @@ await hooks.event({event:{type:"session.idle",properties:{sessionID:"fixture-ses
             events = [json.loads(line) for line in log.read_text().splitlines()]
             self.assertEqual(
                 [e["argv"][-1] for e in events],
-                ["prompt", "prompt", "retain", "prompt", "retain"],
+                ["prompt"]
+                + ["prompt"] * len(excluded_reasons)
+                + ["prompt", "retain", "prompt", "retain"],
             )
             self.assertNotIn("PRIVATE TOOL", json.dumps(events))
+            self.assertNotIn("INCOMPLETE REPLY", json.dumps(events))
             self.assertTrue(all(e["payload"]["cwd"] == str(home) for e in events))
