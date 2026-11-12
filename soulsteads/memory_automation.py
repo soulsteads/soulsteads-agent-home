@@ -99,16 +99,19 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-function active(home) {
+function active(home, operation = "prompt") {
   try {
     const m = JSON.parse(readFileSync(join(home, "soulsteads.json"), "utf8"));
-    return !!m.hindsight && !!m.hindsight_automation &&
-      (m.hindsight_automation.recall || m.hindsight_automation.retain);
+    const policy = m.hindsight_automation;
+    // Retention-only still needs prompts, but reply access requires retain.
+    return !!m.hindsight && !!policy && (operation === "prompt"
+      ? policy.recall === true || policy.retain === true
+      : policy[operation] === true);
   } catch { return false; }
 }
 
 function call(home, runtime, event, payload) {
-  if (!active(home)) return Promise.resolve({});
+  if (!active(home, event)) return Promise.resolve({});
   return new Promise((resolve) => {
     const child = spawn("soulsteads", ["memory-hook", "--runtime", runtime, "--event", event],
       { cwd: home, stdio: ["pipe", "pipe", "ignore"], shell: false });
@@ -141,6 +144,8 @@ export default async function SoulsteadsMemory({ directory, client }) {
   const contexts = new Map();
   return {
     "chat.message": async (input, output) => {
+      contexts.delete(input.sessionID);
+      if (!active(directory)) return;
       const result = await call(directory, "opencode", "prompt", {
         session_id: input.sessionID, turn_id: output.message.id,
         prompt: text(output.parts),
@@ -149,13 +154,14 @@ export default async function SoulsteadsMemory({ directory, client }) {
     },
     "experimental.chat.system.transform": async (input, output) => {
       const context = contexts.get(input.sessionID);
-      if (active(directory) && context) output.system.push(context);
+      if (active(directory, "recall") && context) output.system.push(context);
     },
     event: async ({ event }) => {
-      if (event.type !== "session.idle" || !active(directory)) return;
+      if (event.type !== "session.idle" || !active(directory, "retain")) return;
       const session_id = event.properties.sessionID;
       try {
         const response = await client.session.messages({ path: { id: session_id } });
+        if (!active(directory, "retain")) return;
         const messages = response.data || [];
         const user = messages.filter(m => m.info.role === "user").at(-1);
         const reply = messages.filter(m => m.info.role === "assistant").at(-1);
@@ -178,16 +184,17 @@ export default function SoulsteadsMemory(pi) {
   const home = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
   const replies = new Map();
   pi.on("before_agent_start", async (event, ctx) => {
-    if (typeof event.prompt !== "string") return;
     const session_id = ctx.sessionManager.getSessionId();
     replies.delete(session_id);
+    if (!active(home) || typeof event.prompt !== "string") return;
     const result = await call(home, "pi", "prompt", { session_id, prompt: event.prompt });
-    if (result.additional_context) return { message: {
+    if (active(home, "recall") && result.additional_context) return { message: {
       customType: "soulsteads-hindsight", content: result.additional_context, display: false,
     }};
   });
   pi.on("agent_end", async (event, ctx) => {
     replies.delete(ctx.sessionManager.getSessionId());
+    if (!active(home, "retain")) return;
     const reply = (event.messages || []).filter(m => m.role === "assistant").at(-1);
     if (reply && reply.stopReason === "stop")
       replies.set(ctx.sessionManager.getSessionId(), text(reply.content));
@@ -196,7 +203,7 @@ export default function SoulsteadsMemory(pi) {
     const session_id = ctx.sessionManager.getSessionId();
     const reply = replies.get(session_id);
     replies.delete(session_id);
-    if (!event.aborted && reply) await call(home, "pi", "retain", {
+    if (active(home, "retain") && !event.aborted && reply) await call(home, "pi", "retain", {
       session_id, last_assistant_message: reply,
     });
   });
