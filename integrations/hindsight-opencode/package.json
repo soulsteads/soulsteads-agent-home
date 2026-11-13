@@ -1,0 +1,7 @@
+{
+  "name": "soulsteads-optional-hindsight-opencode",
+  "private": true,
+  "dependencies": {
+    "@vectorize-io/hindsight-coding-agents": "0.8.7"
+  }
+}

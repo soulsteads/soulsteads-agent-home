@@ -172,6 +172,11 @@ runtime can still load its own global configuration.
 
 See [runtime adapters and upstream references](https://github.com/soulsteads/soulsteads-agent-home/blob/main/docs/runtimes.md).
 
+For standalone, explicitly enabled native v2 extensions, see the
+[optional OpenCode v2 plugins](docs/opencode-v2-plugins.md) and the
+[pinned upstream Hindsight integration](integrations/hindsight-opencode/README.md).
+These do not change Home defaults or automatically configure a native profile.
+
 ### Optional Hindsight memory tools
 
 Point the Home at an existing authorized bank without copying credentials:
