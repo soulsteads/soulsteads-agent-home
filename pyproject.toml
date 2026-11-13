@@ -14,6 +14,7 @@ dependencies = []
 
 [project.optional-dependencies]
 hermes = ["PyYAML>=6.0.2,<7"]
+settings = ["tomlkit>=0.12,<1"]
 
 [project.scripts]
 soulsteads = "soulsteads.cli:main"

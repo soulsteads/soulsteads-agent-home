@@ -146,19 +146,23 @@ root**, so project instructions and configuration are discoverable. Ask the agen
 to keep task outputs in `workspace/` when appropriate. This is not a sandbox.
 Runtime arguments after `--` are passed verbatim without a shell.
 
-With maintained Pi 1.4.0, select a separate project without copying Home files:
+Select a separate project explicitly without copying Home files:
 
 ```sh
 soulsteads run helper --project /path/to/project --dry-run
 soulsteads run helper --project /path/to/project
 ```
 
-This selects the Home's identity, operating guidance and canonical skills through
-native Pi flags while the project's `AGENTS.md` remains native. It does not select
-the Home's MCP/provider settings or move authentication/session state. The binary
-version is not automatically checked: install the qualified maintained package.
-Other harnesses reject `--project` in this release rather than promise untested
-equivalence. See [native acceptance and limits](docs/native-acceptance.md).
+All four adapters carry the selected Home's identity, operating guidance and
+skill context through native per-run inputs. They do not copy Home MCP/provider
+settings, change permission policy, or move authentication/session state.
+Codex and Claude receive skill text as bounded prompt guidance rather than
+native slash-skill registration. They require explicit `--allow-context-in-argv`:
+this places private Home identity and memory in process arguments that other
+local users or process monitors may read. Without that consent, project launch
+is refused; use a Home-root launch if this exposure is unacceptable. Dry-run
+output redacts the private text even after consent. The installed version is not automatically
+certified; see [native acceptance and limits](docs/native-acceptance.md).
 
 Changing the launch default requires a clean tracked tree and never removes another
 harness's files. `config --sync` accepts uncommitted canonical edits and upgrades
@@ -176,6 +180,26 @@ For standalone, explicitly enabled native v2 extensions, see the
 [optional OpenCode v2 plugins](docs/opencode-v2-plugins.md) and the
 [pinned upstream Hindsight integration](integrations/hindsight-opencode/README.md).
 These do not change Home defaults or automatically configure a native profile.
+
+### Native harness settings
+
+Inspect native configuration and its known sources, then preview or apply
+Home-local changes without creating a separate settings database:
+
+```sh
+soulsteads settings catalog --runtime codex
+soulsteads settings inspect --home ./helper --runtime codex
+soulsteads settings set --home ./helper --runtime codex \
+  --key @model --value '"example-model"' --plan-file model-plan.json
+soulsteads settings apply --home ./helper --plan-file model-plan.json
+```
+
+Codex editing requires the optional `settings` extra. The manager also supports
+unset, ordered batches, advanced native fields and portable same-harness
+profiles. External user/project layers are read-only, managed identity is
+protected, and credentials belong in native secret storage rather than plans.
+Static inspection is not a claim of runtime-effective precedence. See the
+[settings guide](docs/settings.md) for formats, references and safety limits.
 
 ### Optional Hindsight memory tools
 
@@ -335,6 +359,12 @@ uv build --out-dir /tmp/soulsteads-dist
 
 Tests create disposable homes and real local Git repositories. They do not invoke
 paid model calls, copy private agents, or mutate user-level runtime configuration.
+
+## Native settings
+
+Inspect native runtime settings with `soulsteads settings catalog`, `inspect`, and `get`. Propose edits with `set`, `unset`, `plan`, or `import`; these commands preview by default and require `--apply` to change the selected Agent Home. `apply` revalidates a saved plan and rejects stale state. User/project layers are inspection-only. Settings behavior, aliases, and validation coverage depend on runtime and version; fields outside the catalog remain native runtime territory. Credential stores are not accessed, and runtime-effective values may also depend on CLI flags, environment, trust, or policy.
+
+See [the settings guide](docs/settings.md) for options, profiles, examples, limits, and rollback guidance.
 
 ## License
 

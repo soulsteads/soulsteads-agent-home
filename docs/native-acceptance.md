@@ -48,38 +48,52 @@ qualify the harness's reload behavior.
 
 ## Home versus project
 
-`run --project` is supported only for the qualified maintained Pi version above.
-The selector passes native `--append-system-prompt` paths for Home identity and
-Home AGENTS, and native `--skill` paths for canonical Home skills. The project is
-the process cwd. Authentication, native state, model/provider settings and MCP
-selection stay with the harness; Home MCP configuration is **not** carried into
-project mode. The installed binary version is not automatically probed.
+Explicit `run --project` adapters are available for all four harnesses. They
+select Home identity/AGENTS/skill guidance without copying Home model/provider,
+MCP or permission configuration into the project. Native credentials, sessions,
+trust and approval settings stay with the harness. The installed version is not
+automatically certified by the adapter.
 
-Clean, isolated B/C fixtures demonstrated all of these conditions:
+Current separate-project evidence:
 
-- Home A SOUL/USER/MEMORY/AGENTS and both skill-description canaries loaded.
-- The corresponding B/C project AGENTS loaded through native discovery.
-- A sibling Home D private canary was absent, with no real user-home resource paths.
-- B/C contained only their original AGENTS file after loading; no Home files,
-  links, native configuration, or authentication files were copied into them.
+- **Codex CLI 0.157.1:** a real native HTTP request contained Home
+  SOUL/USER/MEMORY/AGENTS, both canonical skill-description canaries, and the
+  separate project's AGENTS canary. The adapter used per-run
+  `developer_instructions`; skills were prompt content, not native skill
+  registration. `CODEX_HOME` and filesystem permission scope were not expanded.
+- **Claude Code 2.1.318:** a real native HTTP request contained the same Home
+  canaries and the separate project's CLAUDE.md canary. Home skill content came
+  from `--append-system-prompt`, not Claude-native slash-skill registration.
+- **OpenCode 1.19.5:** a real native HTTP request contained the same Home canaries
+  and the separate project's AGENTS canary using the production inline-resource
+  adapter. Existing native inline settings are merged rather than replaced.
+- **Maintained Pi 1.4.0:** the earlier actual native parser/resource-loader
+  qualification remains applicable to its unchanged adapter. B/C project fixtures
+  loaded Home identity, AGENTS and both skill descriptions plus native project
+  instructions; a sibling Home's private canary was absent.
 
-These are native resource-loading tests, not a sandbox or model-behavior test.
-Global/project native resources can still apply during normal use.
+Codex/Claude qualification explicitly opts into argv transport using synthetic
+public canaries. Real project launches require `--allow-context-in-argv` because
+other local users or process monitors may read command-line text; without that
+consent, these adapters fail closed before loading private context. Their dry-run
+output redacts the context. Pi/OpenCode use file references rather than embedding
+the private Home text in process arguments.
 
-Other project selectors are deliberately unqualified in this release:
+The Codex, Claude and OpenCode requests went only to a loopback HTTP fixture,
+which deliberately returned HTTP 400. No successful model response or tool
+execution was simulated. Each separate project retained exactly its original
+files. These are request-construction/resource-selection checks, not evidence of
+instruction following, resumed sessions, live reload, or every harness version.
 
-- OpenCode explicit custom configuration carried Home identity and project rules,
-  including a project-config instruction addition. The attempted combination did
-  not discover Home skills and modified the disposable project inventory. It did
-  not meet the untouched-project acceptance gate.
-- Claude 2.1.270 predates current documented native AGENTS support. Newer
-  additional-directory mechanisms need their own precedence/trust qualification.
-- Codex additive overrides alone did not establish complete Home operating-guidance
-  and canonical-skill selection. Moving `CODEX_HOME` into the definition would also
-  move runtime/authentication state, so that is not an accepted workaround.
+`python scripts/qualify_project_context.py --help` describes the opt-in native
+request fixture. It uses fresh synthetic native state and no real credentials;
+its report identifies retained synthetic files for inspection. The normal test
+suite does not invoke a provider or require native executables.
 
-Do not infer that these mechanisms can never work. They are not accepted adapters
-here. Home-root invocation remains available for all four qualified versions.
+Codex and Claude inline context is bounded and refused when too large rather
+than truncated. Home references outside a project remain subject to native
+filesystem permissions. Native-global and project resources can still apply;
+these inputs are not a security sandbox or an automatic trust grant.
 
 ## Optional memory
 

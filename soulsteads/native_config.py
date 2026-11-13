@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -16,9 +17,12 @@ from .runtimes import CODEX_BEGIN, CODEX_END, IDENTITY_FILES, digest, render_all
 MAX_FILE_BYTES = 1024 * 1024
 
 
-def _read(path, snapshot=None):
+def _read(path, snapshot=None, *, max_bytes=None):
     """Read one bounded regular file through a no-follow directory descriptor."""
     path = Path(path)
+    limit = MAX_FILE_BYTES if max_bytes is None else max_bytes
+    if type(limit) is not int or not 1 <= limit <= 8 * 1024 * 1024:
+        raise core.HomeError("invalid bounded native read limit")
     key = path.absolute()
     try:
         if snapshot is not None and snapshot.root_fd is not None:
@@ -54,7 +58,7 @@ def _read(path, snapshot=None):
             not stat.S_ISREG(before.st_mode)
             or before.st_uid != os.getuid()
             or before.st_nlink != 1
-            or before.st_size > MAX_FILE_BYTES
+            or before.st_size > limit
         ):
             raise core.HomeError("unsafe native configuration file")
         descriptor = os.open(
@@ -65,8 +69,8 @@ def _read(path, snapshot=None):
         if _identity(os.fstat(descriptor)) != _identity(before):
             raise core.HomeError("native configuration changed during read")
         data = bytearray()
-        while len(data) <= MAX_FILE_BYTES:
-            chunk = os.read(descriptor, min(65536, MAX_FILE_BYTES + 1 - len(data)))
+        while len(data) <= limit:
+            chunk = os.read(descriptor, min(65536, limit + 1 - len(data)))
             if not chunk:
                 break
             data.extend(chunk)
@@ -166,10 +170,32 @@ def _json(text):
     def constant(value):
         raise ValueError("nonstandard JSON constant")
 
-    value = json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
+    def finite_float(value):
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            raise ValueError("non-finite native JSON number")
+        return parsed
+
+    value = json.loads(
+        text, object_pairs_hook=pairs, parse_constant=constant, parse_float=finite_float
+    )
     if not isinstance(value, dict):
         raise TypeError("native JSON must be an object")
     return value
+
+
+def _canonical_json(value):
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+        ensure_ascii=False,
+    )
+
+
+def _same_json(left, right):
+    return _canonical_json(left) == _canonical_json(right)
 
 
 def _merge_json(current, desired, previous=None, *, managed=False):
@@ -179,7 +205,7 @@ def _merge_json(current, desired, previous=None, *, managed=False):
     for key in previous.keys() - desired.keys():
         if key not in current:
             continue
-        if key == "hindsight" and current[key] != previous[key]:
+        if key == "hindsight" and not _same_json(current[key], previous[key]):
             raise ValueError("customized Hindsight server cannot be removed")
         if isinstance(previous[key], dict) and isinstance(current[key], dict):
             remaining = _merge_json(current[key], {}, previous[key], managed=managed)
@@ -187,7 +213,7 @@ def _merge_json(current, desired, previous=None, *, managed=False):
                 result[key] = remaining
             else:
                 del result[key]
-        elif current[key] == previous[key]:
+        elif _same_json(current[key], previous[key]):
             del result[key]
         else:
             raise ValueError("customized setting cannot be removed")
@@ -214,8 +240,8 @@ def _merge_json(current, desired, previous=None, *, managed=False):
             for item in value:
                 if item not in result[key]:
                     result[key].append(item)
-        elif current[key] == value or (
-            key in previous and current[key] == previous[key]
+        elif _same_json(current[key], value) or (
+            key in previous and _same_json(current[key], previous[key])
         ):
             result[key] = value
         else:
@@ -398,7 +424,7 @@ def configure_runtime(home, runtime):
                 if runtime not in RUNTIMES:
                     raise core.HomeError("unsupported runtime")
                 manifest["runtime"] = runtime
-                data = json.dumps(manifest, indent=2) + "\n"
+                data = json.dumps(manifest, indent=2, allow_nan=False) + "\n"
                 relative = "soulsteads.json"
                 _verify_root(home, root_chain)
                 snapshot.verify()
@@ -463,6 +489,11 @@ def plan(
     """Preflight every file before publication. Returns files and ownership hashes."""
     home = Path(home)
     read = read or _read
+    if read(home / "opencode.jsonc") is not None:
+        raise core.HomeError(
+            "native config refresh does not support OpenCode JSONC; refusing to create or update opencode.json. "
+            "Use settings commands, or explicitly convert the single native document to valid JSON first"
+        )
     documents = {name: read(home / name) for name in IDENTITY_FILES}
     if any(value is None for value in documents.values()):
         raise core.HomeError("required identity file is missing")
@@ -555,8 +586,8 @@ def plan(
                 # Preserve original formatting when no settings changed.
                 result = (
                     current
-                    if current is not None and _json(current) == value
-                    else json.dumps(value, indent=2) + "\n"
+                    if current is not None and _same_json(_json(current), value)
+                    else json.dumps(value, indent=2, allow_nan=False) + "\n"
                 )
             elif relative.endswith(".toml"):
                 result = _codex(current, desired, managed.get(relative))
@@ -865,7 +896,7 @@ def _sync_locked(
         if automation is not UNSET:
             manifest["hindsight_automation"] = automation
         manifest["managed_files"] = managed
-        manifest_text = json.dumps(manifest, indent=2) + "\n"
+        manifest_text = json.dumps(manifest, indent=2, allow_nan=False) + "\n"
         if snapshot.read(home / "soulsteads.json") != manifest_text:
             publications = dict(writes)
             publications["soulsteads.json"] = manifest_text
