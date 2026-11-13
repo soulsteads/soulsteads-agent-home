@@ -47,7 +47,9 @@ class SettingsFeatureContractTests(unittest.TestCase):
     def test_managed_instructions_are_readable_but_not_writable(self):
         home = self.home("opencode")
         result = self.engine.get_setting(home, "opencode", "/instructions")
-        self.assertEqual(result["value"], ["SOUL.md", "USER.md", "MEMORY.md"])
+        self.assertEqual(
+            result["value"], ["SOUL.md", "USER.md", "MEMORY.md", "LEARNING.md"]
+        )
         with self.assertRaises(core.HomeError):
             self.apply(home, "opencode", "/instructions", ["replacement.md"])
 
