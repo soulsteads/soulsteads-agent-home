@@ -416,13 +416,36 @@ def _same(left, right):
     return _canonical(left) == _canonical(right)
 
 
-def _preserve_owned(runtime, before, after):
+def _preserve_owned(runtime, before, after, manifest):
     for key in OWNED_IDENTITY[runtime]:
         if not _same(before.get(key, _MISSING), after.get(key, _MISSING)):
             raise core.HomeError("managed identity changed")
     path = (_runtime(runtime)["mcp"], "hindsight")
     if not _same(_resolved(before, path, _MISSING), _resolved(after, path, _MISSING)):
         raise core.HomeError("managed Hindsight connection changed")
+
+    from .memory_automation import command_hooks, enabled
+
+    automation = manifest.get("hindsight_automation")
+    hooks = command_hooks(runtime, automation)
+    if runtime == "claude":
+        for event, groups in hooks.items():
+            path = ("hooks", event)
+            previous = _resolved(before, path, [])
+            proposed = _resolved(after, path, [])
+            if not isinstance(previous, list) or not isinstance(proposed, list):
+                raise core.HomeError("managed memory hook changed")
+            for group in groups:
+                if sum(_same(group, item) for item in previous) != sum(
+                    _same(group, item) for item in proposed
+                ):
+                    raise core.HomeError("managed memory hook changed")
+    elif runtime == "codex" and enabled(automation):
+        path = ("features", "hooks")
+        if not _same(
+            _resolved(before, path, _MISSING), _resolved(after, path, _MISSING)
+        ):
+            raise core.HomeError("managed Codex hooks feature changed")
 
 
 def _render(fmt, text, changes):
@@ -446,6 +469,19 @@ def _render(fmt, text, changes):
             )
             continue
         current = _parse(working, fmt)
+        if (
+            fmt == "toml"
+            and managed
+            and path[:1] == ("features",)
+            and _resolved(current, path, _MISSING) is _MISSING
+        ):
+            from .native_config import _codex_feature_value
+
+            dotted = ".".join(_codex_feature_value(part) for part in path)
+            # Root dotted keys must precede all user table headers; appending
+            # would put the feature inside whichever table happens to be last.
+            working = dotted + " = " + _codex_feature_value(value) + "\n" + working
+            continue
         prefix, node = (), current
         for index, part in enumerate(path):
             if not isinstance(node, dict):
@@ -481,9 +517,10 @@ def _make_plan(home, runtime, changes, version, chain, snap):
         relative = _route(runtime, primary, change[1])
         grouped.setdefault(relative, []).append(change)
         _edit_semantic(proposed[relative], *change[:3])
+    manifest = _parse(snap.read(home / _MANIFEST), "json")
     before = _combined(runtime, primary, data)
     after = _combined(runtime, primary, proposed)
-    _preserve_owned(runtime, before, after)
+    _preserve_owned(runtime, before, after, manifest)
     writes = {}
     for relative, edits in grouped.items():
         fmt = "json" if relative == spec.get("mcp_file") else spec["format"]

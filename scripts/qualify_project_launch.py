@@ -96,6 +96,10 @@ def main() -> int:
             },
             "request_constructed": plan["cwd"] == str(project),
         }
+        close = getattr(plan, "close", None)
+        if close is not None:
+            close()
+            status["resource_paths_expired"] = True
         binary = shutil.which(binary_name)
         if binary is None:
             status["native_probe"] = "blocked: binary not installed/on PATH"

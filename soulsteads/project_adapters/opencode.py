@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .. import core
 from ..settings_formats import parse_jsonc
-from .context import collect_context
+from .resources import ResourceLaunch, copy_resources
 
 
 def merge_inline_config(existing, overlay):
@@ -56,33 +56,32 @@ def merge_inline_config(existing, overlay):
 
 def build_project_launch(
     home: Path, project: Path, extra: tuple[str, ...]
-) -> dict[str, object]:
+) -> ResourceLaunch:
     """Build an OpenCode invocation with Home instructions and skill path."""
-    collect_context(home)
-    identity = home / ".pi" / "APPEND_SYSTEM.md"
-    agents = home / "AGENTS.md"
-    skills_root = home / "skills"
-    for path in (identity, agents):
-        if path.is_symlink() or not path.is_file():
-            raise core.HomeError(
-                f"Home context resource is not a regular file: {path.name}"
-            )
-    if skills_root.is_symlink() or not skills_root.is_dir():
-        raise core.HomeError("Home canonical skills directory must be a real directory")
+    temporary, resources, _names = copy_resources(home, project)
+    identity = resources / ".pi" / "APPEND_SYSTEM.md"
+    agents = resources / "AGENTS.md"
+    skills_root = resources / "skills"
 
     inline = {
         "instructions": [str(identity), str(agents)],
         "skills": [str(skills_root)],
     }
-    return {
-        "cwd": str(project),
-        "argv": ["opencode", *extra],
-        "env": {"OPENCODE_CONFIG_CONTENT": json.dumps(inline, separators=(",", ":"))},
-        "qualification": "OpenCode OPENCODE_CONFIG_CONTENT supplies Home instructions and canonical skills search path.",
-        "limits": [
-            "OpenCode loads skill definitions by native skill discovery; skill activation remains model-driven.",
-            "Native credentials, sessions, project files, and permission policy are not copied or changed.",
-            "Inline config is isolated to this child process; no global or project config is written.",
-            "Native OpenCode 1.19.5 validation is recorded; other installed versions still require version-specific qualification.",
-        ],
-    }
+    return ResourceLaunch(
+        {
+            "cwd": str(project),
+            "argv": ["opencode", *extra],
+            "env": {
+                "OPENCODE_CONFIG_CONTENT": json.dumps(inline, separators=(",", ":"))
+            },
+            "qualification": "OpenCode OPENCODE_CONFIG_CONTENT supplies Home instructions and canonical skills search path.",
+            "limits": [
+                "OpenCode loads skill definitions by native skill discovery; skill activation remains model-driven.",
+                "Native credentials, sessions, project files, and permission policy are not copied or changed.",
+                "Inline config is isolated to this child process; no global or project config is written.",
+                "Native OpenCode 1.19.5 validation is recorded; other installed versions still require version-specific qualification.",
+                "Private resource paths are valid only while this plan is open; close the plan after native exit.",
+            ],
+        },
+        temporary,
+    )

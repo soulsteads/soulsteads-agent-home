@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from soulsteads import core
 from soulsteads.launch import prepare_launch
+from soulsteads.project_adapters.resources import ResourceLaunch
 
 
 class ProjectAdapterTests(unittest.TestCase):
@@ -55,6 +56,8 @@ class ProjectAdapterTests(unittest.TestCase):
                 plan = prepare_launch(
                     self.home, runtime, self.project, allow_context_in_argv=True
                 )
+                if isinstance(plan, ResourceLaunch):
+                    self.addCleanup(plan.close)
                 self.assertEqual(plan["cwd"], str(self.project))
                 self.assertEqual(plan["argv"][0], executable)
                 self.assertTrue(plan["qualification"])
@@ -76,14 +79,17 @@ class ProjectAdapterTests(unittest.TestCase):
                     self.assertEqual(plan["env"], {})
                 elif runtime == "opencode":
                     overlay = json.loads(plan["env"]["OPENCODE_CONFIG_CONTENT"])
+                    resources = Path(overlay["instructions"][0]).parents[1]
+                    self.assertFalse(resources.is_relative_to(self.home))
                     self.assertEqual(
-                        overlay["instructions"],
-                        [
-                            str(self.home / ".pi" / "APPEND_SYSTEM.md"),
-                            str(self.home / "AGENTS.md"),
-                        ],
+                        [Path(path).read_text() for path in overlay["instructions"]],
+                        ["identity context\n", "home instructions\n"],
                     )
-                    self.assertEqual(overlay["skills"], [str(self.skills)])
+                    self.assertEqual(overlay["skills"], [str(resources / "skills")])
+                    self.assertEqual(
+                        (resources / "skills/sample/SKILL.md").read_bytes(),
+                        (self.skills / "sample/SKILL.md").read_bytes(),
+                    )
                 else:
                     self.assertIn("--config", plan["argv"])
                     override = plan["argv"][plan["argv"].index("--config") + 1]
@@ -111,6 +117,8 @@ class ProjectAdapterTests(unittest.TestCase):
                     extra=extra,
                     allow_context_in_argv=True,
                 )
+                if isinstance(plan, ResourceLaunch):
+                    self.addCleanup(plan.close)
                 self.assertEqual(plan["argv"][-len(extra) :], list(extra))
 
     def test_fixture_resolves_platform_temporary_directory_alias(self) -> None:
@@ -121,7 +129,8 @@ class ProjectAdapterTests(unittest.TestCase):
         original = tempfile.TemporaryDirectory
 
         def temporary(*args, **kwargs):
-            return original(*args, dir=alias, **kwargs)
+            kwargs["dir"] = alias
+            return original(*args, **kwargs)
 
         result = unittest.TestResult()
         with patch.object(tempfile, "TemporaryDirectory", side_effect=temporary):
@@ -135,10 +144,14 @@ class ProjectAdapterTests(unittest.TestCase):
         plan = prepare_launch(self.home, "pi", self.project, extra=("--no-session",))
         self.assertEqual(plan["cwd"], str(self.project))
         self.assertEqual(plan["argv"][0], "pi")
-        self.assertIn(str(self.home / ".pi" / "APPEND_SYSTEM.md"), plan["argv"])
-        self.assertIn(str(self.home / "AGENTS.md"), plan["argv"])
+        assert isinstance(plan, ResourceLaunch)
+        self.addCleanup(plan.close)
+        resources = Path(plan["argv"][2]).parents[1]
+        self.assertFalse(resources.is_relative_to(self.home))
+        self.assertEqual(Path(plan["argv"][2]).read_text(), "identity context\n")
+        self.assertEqual(Path(plan["argv"][4]).read_text(), "home instructions\n")
         self.assertIn(
-            ("--skill", str(self.skills / "sample")),
+            ("--skill", str(resources / "skills" / "sample")),
             list(zip(plan["argv"], plan["argv"][1:])),
         )
         self.assertEqual(plan["argv"][-1], "--no-session")

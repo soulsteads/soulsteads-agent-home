@@ -143,9 +143,13 @@ in `.claude/settings.json`. The manager does not execute commands or install MCP
 extensions while editing.
 
 Soulsteads-owned identity fields, canonical skill wiring and its Hindsight
-connection are protected. Use the corresponding identity, skills or Hindsight
-workflow to change them. Read access and write protection are separate: managed
-configuration can still be inspected.
+connection are protected. While memory automation is enabled, its owned Claude
+callback groups and the required Codex hooks feature cannot be removed or changed
+through generic edits, ancestor replacement or profile import. Unrelated user
+callbacks and feature flags remain editable. Use the corresponding identity,
+skills or explicit Hindsight enable/disable workflow to change managed behavior.
+Read access and write protection are separate: managed configuration can still
+be inspected.
 
 Never put a real credential in `--value`, a changes file, a profile or a plan.
 The manager rejects recognized literal credentials and suspicious credential
@@ -203,3 +207,32 @@ because its native inline inputs expose private Home text in process arguments.
 Other local users or process monitors may read those arguments. Do not enable
 this on a host where that exposure is unacceptable; Home-root launches remain
 available without it. Dry-run output redacts the private inline text.
+
+OpenCode and Pi live project launches instead lease a private temporary snapshot
+of the admitted identity, AGENTS.md and complete selected skill subtrees, including
+relative assets. Native processes read this snapshot, never the subsequently
+mutable Home paths. Files are bounded to 1 MiB each, with aggregate 64 MiB and
+10,000-entry limits; symlinks, hardlinks, specials, writable shared files and
+changing source inventories are refused. Temporary storage must be outside both
+Home and project. Home-wide configuration, authentication and session directories
+are not copied. Selected relative skill assets are copied verbatim: review them
+for secrets before launch.
+
+The synchronous CLI removes snapshots after native exit, including nonzero exit,
+spawn failure and ordinary exceptions. OpenCode/Pi dry-runs create no copies and
+return non-executable resource descriptors, not argv or expiring snapshot paths.
+The Python `prepare_launch()` and OpenCode adapter return a context-managed
+`ResourceLaunch` for live use: keep `with prepare_launch(...) as launch:` open
+through the whole subprocess call, or explicitly close the returned plan in a
+`finally` block. JSON serialization does not transfer ownership or produce a
+replayable plan. Codex/Claude retain their consent-gated inline-input contract.
+
+This protects against changes in the source Home, not an arbitrary same-UID
+process that can tamper with the launcher's private temporary namespace or memory.
+A forced kill or host crash can leave an owner-only snapshot under the selected
+TMPDIR; after confirming all native consumers have exited, remove only that
+specific stale directory. Background consumers and reading resources after lease
+exit are not qualified. Do not treat a leftover snapshot as recovery authority.
+Actual OpenCode 1.19.5 request capture (intentional loopback HTTP 400) and Pi 1.5.2
+offline resource loading consumed the new handoff after synthetic Home replacement;
+no successful model inference, live bank, resume or compaction is certified.

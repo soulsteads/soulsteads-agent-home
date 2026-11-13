@@ -421,7 +421,13 @@ qualification. Older clients without those events cannot provide this automation
 repository while carrying the selected Home's identity and skill guidance.
 `prepare_launch(home, runtime, project, extra=())` returns the native arguments,
 child environment and project working directory; extra arguments stay literal.
-No adapter copies authentication/session state or writes project/global config.
+For OpenCode/Pi it returns an explicit resource lease: keep the returned object
+in a `with` block through native execution, or close it in `finally`. The CLI
+handles that lifetime. Preview mode (`preview=True`, selected by `--dry-run`)
+returns a non-executable descriptor without creating private copies. See the
+[snapshot lifetime and security boundary](settings.md#separate-projects).
+No adapter copies Home-wide authentication/session directories or writes
+project/global config. Selected relative skill assets are copied verbatim.
 
 **Private argv consent:** Codex and Claude place the selected Home context in
 process arguments, which may be readable by other local users or process
@@ -432,7 +438,8 @@ acceptable. A private-file transport for these interactive modes is not qualifie
 here. Dry-run output always redacts their inline Home text.
 
 - **Maintained Pi:** native `--append-system-prompt` paths carry the Home identity
-  projection and AGENTS; `--skill` paths select canonical Home skills.
+  projection and AGENTS; `--skill` paths select private per-launch copies of
+  the canonical Home skills and their relative assets.
 - **Codex:** native `--cd` selects the project and a per-run
   `--config developer_instructions=...` value carries bounded Home identity,
   AGENTS and canonical SKILL.md content. This selects the Home developer-guidance
@@ -442,7 +449,8 @@ here. Dry-run output always redacts their inline Home text.
 - **Claude Code:** `--append-system-prompt` carries the same bounded Home content.
   This is not Claude-native slash-skill registration; no `--add-dir` is used.
 - **OpenCode:** process-local `OPENCODE_CONFIG_CONTENT` adds Home instruction
-  files and the canonical skill search path. An existing inline configuration
+  files and skill search paths from the same private resource lease, not mutable
+  Home pathnames. An existing inline configuration
   retains its unrelated model/provider/permission fields, instruction paths,
   skill paths and skill URLs. Native discovery does not prove skill activation.
 
@@ -455,13 +463,18 @@ permission policy are deliberately not copied into project mode.
 ### Qualification and limits
 
 The focused project tests exercise deterministic arguments, environment handling,
-context markers, no-shell behavior and non-copying. Independent native request
+context markers, no-shell behavior and unchanged Home/project state. Independent native request
 fixtures additionally exercised Codex 0.157.1, Claude Code 2.1.318 and OpenCode
 1.19.5 with a separate synthetic project. Each native request included Home
 SOUL/USER/MEMORY/AGENTS markers, both canonical skill-description markers and
 project instructions. The project inventory stayed unchanged. Each request was
 stopped by a loopback HTTP 400; no model task completed or real credential was
-used. Maintained Pi 1.4.0 retains its earlier native resource-loading qualification.
+used. Maintained Pi 1.4.0 retains its earlier direct-Home resource-loading
+qualification. The new leased handoff was separately checked with OpenCode 1.19.5
+(actual loopback HTTP 400 request) and Pi 1.5.2 (actual offline resource loader):
+Home source replacement after preparation did not change loaded identity, skill
+or project markers; Pi also loaded a relative skill asset from the leased copy.
+This does not certify inference, bank persistence, resume or compaction.
 
 To rerun the opt-in request-construction check from a source checkout:
 

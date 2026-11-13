@@ -49,9 +49,14 @@ class ProjectCLITests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         plan = json.loads(out)
         self.assertEqual(plan["cwd"], str(self.project))
-        self.assertEqual(plan["argv"][0], "pi")
-        self.assertIn(str(self.home / ".pi/APPEND_SYSTEM.md"), plan["argv"])
-        self.assertEqual(plan["argv"][-1], "--no-session")
+        self.assertTrue(plan["preview"])
+        self.assertEqual(plan["runtime"], "pi")
+        self.assertEqual(
+            plan["resource_inputs"]["instructions"],
+            [".pi/APPEND_SYSTEM.md", "AGENTS.md"],
+        )
+        self.assertEqual(plan["extra"], ["--no-session"])
+        self.assertNotIn("argv", plan)
         self.assertEqual(
             before, {p.name: p.read_bytes() for p in self.project.iterdir()}
         )

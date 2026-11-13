@@ -602,36 +602,42 @@ def main(argv=None):
                     args.project,
                     extra,
                     allow_context_in_argv=args.allow_context_in_argv,
+                    preview=args.dry_run,
                 )
             else:
                 launch = {"cwd": str(home), "argv": [runtime, *extra]}
-            if args.dry_run:
-                displayed = dict(launch)
-                if launch.get("private_argv_indices"):
-                    displayed["argv"] = list(launch["argv"])
-                    for index in launch["private_argv_indices"]:
-                        displayed["argv"][index] = "[PRIVATE HOME CONTEXT REDACTED]"
-                    displayed["private_context_redacted"] = True
-                print(json.dumps(displayed))
-            else:
-                environment = os.environ.copy()
-                overrides = dict(launch.get("env", {}))
-                if "OPENCODE_CONFIG_CONTENT" in overrides and environment.get(
-                    "OPENCODE_CONFIG_CONTENT"
-                ):
-                    from .project_adapters.opencode import merge_inline_config
+            try:
+                if args.dry_run:
+                    displayed = dict(launch)
+                    if launch.get("private_argv_indices"):
+                        displayed["argv"] = list(launch["argv"])
+                        for index in launch["private_argv_indices"]:
+                            displayed["argv"][index] = "[PRIVATE HOME CONTEXT REDACTED]"
+                        displayed["private_context_redacted"] = True
+                    print(json.dumps(displayed))
+                else:
+                    environment = os.environ.copy()
+                    overrides = dict(launch.get("env", {}))
+                    if "OPENCODE_CONFIG_CONTENT" in overrides and environment.get(
+                        "OPENCODE_CONFIG_CONTENT"
+                    ):
+                        from .project_adapters.opencode import merge_inline_config
 
-                    overrides["OPENCODE_CONFIG_CONTENT"] = merge_inline_config(
-                        environment["OPENCODE_CONFIG_CONTENT"],
-                        overrides["OPENCODE_CONFIG_CONTENT"],
-                    )
-                environment.update(overrides)
-                return subprocess.run(
-                    launch["argv"],
-                    check=False,
-                    cwd=launch["cwd"],
-                    env=environment,
-                ).returncode
+                        overrides["OPENCODE_CONFIG_CONTENT"] = merge_inline_config(
+                            environment["OPENCODE_CONFIG_CONTENT"],
+                            overrides["OPENCODE_CONFIG_CONTENT"],
+                        )
+                    environment.update(overrides)
+                    return subprocess.run(
+                        launch["argv"],
+                        check=False,
+                        cwd=launch["cwd"],
+                        env=environment,
+                    ).returncode
+            finally:
+                close = getattr(launch, "close", None)
+                if close is not None:
+                    close()
         elif args.command == "skill":
             print(
                 core.install_skill(

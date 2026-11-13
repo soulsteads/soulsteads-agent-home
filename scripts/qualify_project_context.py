@@ -68,6 +68,11 @@ def main():
     parser.add_argument("--scratch", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=45)
+    parser.add_argument(
+        "--swap-home-resources",
+        action="store_true",
+        help="replace synthetic source resources after preparation, before native consumption",
+    )
     args = parser.parse_args()
     root = args.scratch.expanduser().resolve()
     if not root.is_dir() or not root.is_relative_to(
@@ -91,6 +96,7 @@ def main():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     process = None
+    plan = None
     try:
         home = make_home(run_root / "home")
         project = run_root / "project"
@@ -185,6 +191,20 @@ def main():
         plan = prepare_launch(
             home, args.runtime, project, extra, allow_context_in_argv=True
         )
+        if args.swap_home_resources:
+            if args.runtime != "opencode":
+                parser.error(
+                    "source replacement qualification currently targets OpenCode"
+                )
+            external = run_root / "external-context"
+            external.mkdir(mode=0o700)
+            for relative in (".pi/APPEND_SYSTEM.md", "AGENTS.md"):
+                replacement = external / Path(relative).name
+                replacement.write_text("EXTERNAL_CONTEXT_SENTINEL")
+                (home / relative).unlink()
+                (home / relative).symlink_to(replacement)
+            (home / "skills").rename(home / "original-skills")
+            (home / "skills").symlink_to(external, target_is_directory=True)
         argv = [executable, *plan["argv"][1:]]
         overlay = dict(plan.get("env", {}))
         if args.runtime == "opencode":
@@ -223,6 +243,11 @@ def main():
             "version": (version.stdout or version.stderr).strip(),
             "scope": "actual native HTTP request construction; intentionally stopped with HTTP 400, no completed model task",
             "request_captured": payload is not None,
+            "source_resources_replaced": args.swap_home_resources,
+            "replacement_absent": all(
+                "EXTERNAL_CONTEXT_SENTINEL" not in json.dumps(value)
+                for value in captures
+            ),
             "home_identity": all(
                 f"HOME_A_{name}_CANARY" in encoded
                 for name in ("SOUL", "USER", "MEMORY", "AGENTS")
@@ -249,6 +274,7 @@ def main():
                 report[key]
                 for key in (
                     "request_captured",
+                    "replacement_absent",
                     "home_identity",
                     "home_skills",
                     "project_instructions",
@@ -261,6 +287,9 @@ def main():
         if process is not None and process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
             process.wait(timeout=5)
+        close = getattr(plan, "close", None)
+        if close is not None:
+            close()
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
