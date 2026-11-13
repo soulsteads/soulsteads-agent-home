@@ -20,3 +20,10 @@ soulsteads = "soulsteads.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["soulsteads*"]
+
+[tool.setuptools.package-data]
+soulsteads = [
+    "assets/opencode-v2/*.mjs",
+    "assets/opencode-v2/package.json",
+    "assets/opencode-v2/*/index.js",
+]
