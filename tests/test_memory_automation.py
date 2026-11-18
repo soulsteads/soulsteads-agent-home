@@ -329,7 +329,7 @@ class MemoryAutomationTests(unittest.TestCase):
         options = {"learning": {"mode": "propose", "skills": []}}
         with (
             patch("soulsteads.publication.publish_file", side_effect=fail_manifest),
-            self.assertRaisesRegex(core.HomeError, "partially applied"),
+            self.assertRaisesRegex(core.HomeError, "rolled back"),
         ):
             sync(self.home, **options)
         self.assertEqual(core.load(self.home)["learning"]["mode"], "off")

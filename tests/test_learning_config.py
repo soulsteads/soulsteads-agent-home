@@ -314,10 +314,23 @@ class CapabilityTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             self.assertEqual(cli.main(["capabilities"]), 0)
         report = json.loads(output.getvalue())
-        self.assertEqual(len(report["runtimes"]), 4)
+        self.assertEqual(len(report["runtimes"]), 5)
+        self.assertEqual(
+            {adapter["runtime"] for adapter in report["runtimes"]},
+            {"opencode", "pi", "codex", "claude", "soulsteads"},
+        )
         for adapter in report["runtimes"]:
             self.assertEqual(adapter["runtime_version"], "unverified")
             features = adapter["features"]
+            if adapter["runtime"] == "soulsteads":
+                self.assertNotIn("hindsight", features)
+                self.assertIn(
+                    "Hindsight memory and automation", features["settings"]["unsupported"]
+                )
+                self.assertEqual(features["project_selection"]["support"], "unsupported")
+                self.assertEqual(features["curated_memory"]["support"], "native-instruction-context")
+                self.assertEqual(features["skills"]["support"], "native-discovery")
+                continue
             self.assertTrue(features["hindsight"]["automatic_recall"])
             self.assertTrue(features["hindsight"]["automatic_retention"])
             self.assertTrue(features["hindsight"]["automation"]["opt_in"])

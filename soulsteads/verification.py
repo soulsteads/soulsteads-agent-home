@@ -28,7 +28,7 @@ def _json(raw):
     return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
 
 
-def verify_home(home):
+def verify_home(home, probe_versions=False):
     """Return content-free findings; success is not runtime or privacy certification."""
     findings = []
     adapters = []
@@ -375,7 +375,7 @@ def verify_home(home):
             "Home structure could not be safely verified.",
             "Review file types, permissions, size limits and configuration locally.",
         )
-    return {
+    report = {
         "schema_version": 1,
         "scope": "offline-structural",
         "status": (
@@ -397,3 +397,8 @@ def verify_home(home):
             "secret-content",
         ],
     }
+    if probe_versions:
+        from .version_probe import probe_all
+
+        report["version_probe"] = probe_all(RUNTIMES)
+    return report

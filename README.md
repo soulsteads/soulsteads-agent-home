@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Your agent. Your files. No BS.</strong><br/>
+  <strong>Define your agent once. Keep its files under your control.</strong><br/>
   Define your agent once. Generate native configuration for your chosen harness.
 </p>
 
@@ -41,28 +41,25 @@ It does not install your runtime or change its global configuration.
 
 ## Get started
 
-Install the CLI, create a home, and preview its launch command:
-
-```sh
-uv tool install git+https://github.com/soulsteads/soulsteads-agent-home.git
-soulsteads create helper --runtime opencode
-soulsteads run helper --dry-run
-```
-
-Choose `pi`, `claude`, or `codex` instead if that is the runtime you use.
-Once your runtime is installed and authenticated, launch it with `soulsteads run helper`.
-Or `cd ~/.soulsteads/agents/helper` and run `opencode`, `pi`, `codex`, or `claude`
-directly. Native configuration supplies the behavior; the Soulsteads launcher is optional.
-
-### Other installation options
+From a checkout of this repository, use [uv](https://docs.astral.sh/uv/) to install
+the CLI, then create and verify a disposable Home:
 
 ```sh
 uv tool install .
-# Or, from the repository URL:
-uv tool install git+https://github.com/soulsteads/soulsteads-agent-home.git
-# Alternatively:
-pipx install .
+soulsteads create helper --runtime opencode --path "$HOME/agent-home-example"
+soulsteads verify "$HOME/agent-home-example"
+soulsteads run "$HOME/agent-home-example" --dry-run
 ```
+
+Choose `pi`, `claude`, or `codex` instead if that is the runtime you use.
+Once your runtime is installed and authenticated, launch it with
+`soulsteads run "$HOME/agent-home-example"`.
+Or `cd "$HOME/agent-home-example"` and run `opencode`, `pi`, `codex`, or `claude`
+directly. Native configuration supplies the behavior; the Soulsteads launcher is optional.
+
+This is an early release. Supported settings and native behavior vary by
+harness and version. For a source archive, wheel, or recovery steps, see the
+[standalone installation guide](docs/installation.md).
 
 ## Create an agent
 
@@ -146,19 +143,25 @@ root**, so project instructions and configuration are discoverable. Ask the agen
 to keep task outputs in `workspace/` when appropriate. This is not a sandbox.
 Runtime arguments after `--` are passed verbatim without a shell.
 
-With maintained Pi 1.4.0, select a separate project without copying Home files:
+Select a separate project explicitly without copying Home files:
 
 ```sh
 soulsteads run helper --project /path/to/project --dry-run
 soulsteads run helper --project /path/to/project
 ```
 
-This selects the Home's identity, operating guidance and canonical skills through
-native Pi flags while the project's `AGENTS.md` remains native. It does not select
-the Home's MCP/provider settings or move authentication/session state. The binary
-version is not automatically checked: install the qualified maintained package.
-Other harnesses reject `--project` in this release rather than promise untested
-equivalence. See [native acceptance and limits](docs/native-acceptance.md).
+All four adapters carry the selected Home's identity, operating guidance and
+skill context through native per-run inputs. Native-only Home MCP/provider
+settings and authentication/session state stay with their native scopes. Codex
+also receives explicitly configured canonical shared settings as per-run flags
+(see below); an explicit shared permission is applied only when requested.
+Codex and Claude receive skill text as bounded prompt guidance rather than
+native slash-skill registration. They require explicit `--allow-context-in-argv`:
+this places private Home identity and memory in process arguments that other
+local users or process monitors may read. Without that consent, project launch
+is refused; use a Home-root launch if this exposure is unacceptable. Dry-run
+output redacts the private text even after consent. The installed version is not automatically
+certified; see [native acceptance and limits](docs/native-acceptance.md).
 
 Changing the launch default requires a clean tracked tree and never removes another
 harness's files. `config --sync` accepts uncommitted canonical edits and upgrades
@@ -177,6 +180,43 @@ For standalone, explicitly enabled native v2 extensions, see the
 [pinned upstream Hindsight integration](integrations/hindsight-opencode/README.md).
 These do not change Home defaults or automatically configure a native profile.
 
+### Canonical shared settings
+
+Install `soulsteads[settings]` for format-preserving Codex TOML edits. Configure
+shared intent once, then select a harness or launch through Home:
+
+```sh
+soulsteads config helper --shared-json '{"model":"your-model","provider":"your-native-provider"}'
+soulsteads run helper -- exec --ephemeral "Use the installed proof skill."
+```
+
+`--shared-json` replaces the canonical object; `{}` removes its owned native
+values. Supported mappings, conflicts, recovery, and version qualification are
+listed in [the shared-settings guide](docs/shared-settings.md). Native provider
+credentials and provider definitions remain native. Harness changes and actual
+Home-managed launches refresh the selected harness before execution. Dry runs
+do not refresh files. A fresh native session is required to load changed state.
+
+### Native harness settings
+
+Inspect native configuration and its known sources, then preview or apply
+Home-local changes without creating a separate settings database:
+
+```sh
+soulsteads settings catalog --runtime codex
+soulsteads settings inspect --home ./helper --runtime codex
+soulsteads settings set --home ./helper --runtime codex \
+  --key @model --value '"example-model"' --plan-file model-plan.json
+soulsteads settings apply --home ./helper --plan-file model-plan.json
+```
+
+Codex editing requires the optional `settings` extra. The manager also supports
+unset, ordered batches, advanced native fields and portable same-harness
+profiles. External user/project layers are read-only, managed identity is
+protected, and credentials belong in native secret storage rather than plans.
+Static inspection is not a claim of runtime-effective precedence. See the
+[settings guide](docs/settings.md) for formats, references and safety limits.
+
 ### Optional Hindsight memory tools
 
 Point the Home at an existing authorized bank without copying credentials:
@@ -191,6 +231,11 @@ soulsteads verify helper
 The harness reads its native project MCP configuration and the token from its
 environment. Configuration and verification are offline; the token is never copied
 into generated files. Native trust/approval still applies.
+
+The bank in the URL is not an access boundary. With Hindsight 1.2.1, isolate
+work, personal and other principals by giving each one a separate service with
+its own key and schema, then a distinct URL and token variable in each Home. See
+[per-principal memory isolation](docs/runtimes.md#per-principal-memory-isolation-with-hindsight-121).
 
 Opt in separately to recall at prompt submission and retention of captured prompts
 with completed assistant replies:
@@ -209,7 +254,9 @@ in private, ignored `.runtime/hindsight/` files. Start fresh sessions after chan
 
 Remove owned project entries and disable callbacks with
 `soulsteads config helper --no-hindsight`; bank data and global servers remain
-untouched. Live-bank persistence and native approval remain unqualified. See
+untouched. For Codex 0.169.0 only, native retain/direct readback, useful fresh-session
+recall across a service restart and a service-denied wrong-scope connection have
+bounded evidence; other harnesses and automatic callbacks remain unqualified. See
 [automatic memory](docs/runtimes.md#automatic-hindsight-memory) for versions,
 limits and the distinction between hook execution and native MCP tool approvals.
 
@@ -327,14 +374,17 @@ transfer credentials, or start a messaging service.
 
 ## Development
 
+Install the `hermes` and `settings` extras to run the full source suite:
+
 ```sh
-PYTHONPYCACHEPREFIX=/tmp/soulsteads-pycache python3 -m unittest discover -s tests -v
+PYTHONPYCACHEPREFIX=/tmp/soulsteads-pycache uv run --no-project --with '.[hermes,settings]' python -m unittest discover -s tests -v
 uvx ruff check soulsteads tests
 uv build --out-dir /tmp/soulsteads-dist
 ```
 
 Tests create disposable homes and real local Git repositories. They do not invoke
 paid model calls, copy private agents, or mutate user-level runtime configuration.
+
 
 ## License
 

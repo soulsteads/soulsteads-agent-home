@@ -1,0 +1,1 @@
+"""Native project-launch adapters."""

@@ -22,7 +22,7 @@ class NativeReportingTests(unittest.TestCase):
     def test_all_adapters_describe_paths_mechanism_and_qualification_limits(self):
         report = verify_home(self.home)
         adapters = {item["runtime"]: item for item in report.get("native_adapters", [])}
-        self.assertEqual(set(adapters), {"opencode", "pi", "codex", "claude"})
+        self.assertEqual(set(adapters), {"opencode", "pi", "codex", "claude", "soulsteads"})
         for runtime, adapter in adapters.items():
             self.assertEqual(adapter["evidence"], "offline-structural")
             self.assertEqual(adapter["runtime_version"], "unverified")

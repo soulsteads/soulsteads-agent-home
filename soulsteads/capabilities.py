@@ -7,12 +7,25 @@ _VERSIONS = {
     "pi": "@earendil-works/pi-coding-agent@1.4.0",
     "claude": "Claude Code 2.1.270",
     "codex": "Codex CLI 0.157.1",
+    "soulsteads": "soulsteads-harness 0.1.0 (config fields per accepted contract 686248c)",
 }
 
 
 def for_runtime(runtime):
     if runtime not in RUNTIMES:
         raise ValueError("unsupported runtime")
+    if runtime == "soulsteads":
+        return {
+            "identity": {"support": "native-config", "mechanism": "agent.instructions_files (AGENTS/SOUL/USER/MEMORY[/LEARNING].md)"},
+            "curated_memory": {"support": "native-instruction-context"},
+            "skills": {"support": "native-discovery", "mechanism": "skills.roots=[skills]; skills never grant or run scripts"},
+            "settings": {
+                "mapped": ["model -> provider.model", "permission read-only -> read_file/list_dir/search_files in workspace/", "permission workspace-write -> read_file/write_file/edit_file/list_dir/search_files in workspace/ only (no run_command, no network; approvals stay native-owned)", "stdio mcp -> mcp_servers (default_approval=ask)"],
+                "unsupported": ["provider (endpoint is operator-owned provider.base_url_env)", "permission danger-full-access and other values (shell/network are native-only)", "Hindsight memory and automation", "project launch (--project)"],
+                "native_only": ["limits", "commands/run_command", "per-tool approval", "A2A/ACP", "hooks", "http MCP"],
+            },
+            "project_selection": {"support": "unsupported", "home_mcp_forwarded": False},
+        }
     return {
         "identity": {
             "support": "native-config",
@@ -65,9 +78,9 @@ def for_runtime(runtime):
     }
 
 
-def report(runtime=None):
+def report(runtime=None, probe_versions=False):
     names = RUNTIMES if runtime is None else (runtime,)
-    return {
+    result = {
         "schema_version": 1,
         "scope": "adapter-capabilities",
         "qualification_reference": "docs/native-acceptance.md",
@@ -82,3 +95,10 @@ def report(runtime=None):
             for name in names
         ],
     }
+    if probe_versions:
+        from .version_probe import BINARIES, probe_runtime
+
+        for entry in result["runtimes"]:
+            if entry["runtime"] in BINARIES:
+                entry["version_probe"] = probe_runtime(entry["runtime"])
+    return result

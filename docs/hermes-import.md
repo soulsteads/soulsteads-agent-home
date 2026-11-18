@@ -125,7 +125,8 @@ importing that surface instead of the default `cli` selection.
   reported rather than silently treated as a complete effective catalogue.
 - Markdown bodies and supporting assets keep their original bytes; only SKILL.md
   frontmatter changes. The shared `.agents/skills` and `.claude/skills` aliases
-  expose the converted catalogue to all four supported harnesses.
+  expose the converted catalogue to the external harnesses. The Soulsteads native
+  harness discovers the canonical `skills/` directory directly.
 - Imported Home instructions explain native skill loading and native-tool
   equivalents for Hermes skill/file/terminal tool references. This is guidance,
   not a rewrite of arbitrary script or tool APIs.
@@ -176,7 +177,7 @@ soulsteads import-hermes helper \
 ```
 
 Hermes-specific settings do not necessarily have equivalent meanings in OpenCode,
-pi, Claude Code, or Codex. When the report requires manual configuration, review
+pi, Claude Code, Codex, or the Soulsteads native harness. When the report requires manual configuration, review
 it and add `--allow-partial` only if you accept the listed omissions:
 
 ```sh
@@ -190,6 +191,16 @@ checks, duplicate skill IDs, or destination protections. The importer does not
 translate unknown permissions into permissive runtime defaults. Generated runtime
 configuration follows the existing [adapter contract](runtimes.md), without
 changing global model, authentication, MCP, trust, or tool-permission settings.
+
+The optional native harness is also an import target: pass `--runtime soulsteads`
+to both inspection and application. After reviewing the omissions, use
+`soulsteads config /absolute/path/to/new-home --shared-json` to select canonical
+model and permission settings. Configure the endpoint and runtime limits as
+operator-owned native settings according to the [adapter contract](runtimes.md#soulsteads-native-harness---runtime-soulsteads-optional).
+These are explicit operator choices, not translated legacy settings. Then inspect
+`soulsteads run /absolute/path/to/new-home --dry-run` before actual use.
+See [native compatibility and release limits](native-acceptance.md) before
+treating a successful import as proof of native runtime behavior.
 
 ### Credentials and private reference material
 

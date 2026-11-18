@@ -232,6 +232,7 @@ def _allowed_path(path: str) -> bool:
             ".codex/hooks.json",
             ".opencode/plugins/soulsteads-memory.js",
             ".pi/extensions/soulsteads-memory.ts",
+            "opencode.jsonc",
             *runtime_paths,
             *SKILL_LINKS,
         }
@@ -424,7 +425,7 @@ def create(
         _error("refusing to adopt or overwrite an existing path")
     _check_safe_ancestors(target.parent)
     _check_not_nested_git(target.parent)
-    from .runtimes import RUNTIMES, digest, render_all
+    from .runtimes import RUNTIMES, digest, render, render_all
     from .templates import DOCUMENTS
 
     if runtime not in RUNTIMES:
@@ -438,6 +439,15 @@ def create(
     if any(name not in available for name in learning["skills"]):
         _error("learning scope requires existing local skill files")
     rendered = render_all(DOCUMENTS, learning=learning)
+    native_owned = None
+    if runtime == "soulsteads":
+        from . import native_harness
+
+        rendered.update(render("soulsteads", DOCUMENTS, learning=learning))
+        text, native_owned = native_harness.plan(
+            {"name": name}, None, "LEARNING.md" in rendered
+        )
+        rendered[native_harness.FILE] = text
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     _private_dir(target)
     try:
@@ -482,6 +492,11 @@ def create(
             "learning": learning,
             "managed_files": {p: digest(text) for p, text in rendered.items()},
         }
+        if native_owned is not None:
+            from . import native_harness
+
+            manifest["shared_owned"] = {"soulsteads": native_owned}
+            manifest["managed_files"][native_harness.FILE] = native_harness.digest_owned(native_owned)
         from .publication import publish_fresh
 
         publish_fresh(

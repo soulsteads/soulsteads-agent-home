@@ -74,8 +74,9 @@ class PublicationKernelTests(unittest.TestCase):
         self.assertIn("soulsteads.json", seen)
         self.assertIn("APPEND_SYSTEM.md", seen)
 
-    def test_partial_failure_reports_exact_applied_and_remaining_paths(self):
+    def test_failure_before_manifest_rolls_back_published_paths(self):
         original_publish = publication.publish_file
+        before = (self.home / "opencode.json").read_bytes()
         count = 0
 
         def fail_second(parent_fd, name, text, **kwargs):
@@ -87,10 +88,7 @@ class PublicationKernelTests(unittest.TestCase):
 
         with (
             patch.object(publication, "publish_file", side_effect=fail_second),
-            self.assertRaisesRegex(
-                core.HomeError,
-                r"applied=\['opencode.json'\].*remaining=\['.pi/mcp.json'",
-            ),
+            self.assertRaisesRegex(core.HomeError, "rolled back"),
         ):
             native_config.sync(
                 self.home,
@@ -99,6 +97,7 @@ class PublicationKernelTests(unittest.TestCase):
                     "token_env": "TEST_TOKEN",
                 },
             )
+        self.assertEqual((self.home / "opencode.json").read_bytes(), before)
 
     def test_cooperating_process_waits_on_persistent_lock_inode(self):
         descriptor = os.open(self.home, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)

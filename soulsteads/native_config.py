@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -16,9 +17,12 @@ from .runtimes import CODEX_BEGIN, CODEX_END, IDENTITY_FILES, digest, render_all
 MAX_FILE_BYTES = 1024 * 1024
 
 
-def _read(path, snapshot=None):
+def _read(path, snapshot=None, *, max_bytes=None):
     """Read one bounded regular file through a no-follow directory descriptor."""
     path = Path(path)
+    limit = MAX_FILE_BYTES if max_bytes is None else max_bytes
+    if type(limit) is not int or not 1 <= limit <= 8 * 1024 * 1024:
+        raise core.HomeError("invalid bounded native read limit")
     key = path.absolute()
     try:
         if snapshot is not None and snapshot.root_fd is not None:
@@ -54,7 +58,7 @@ def _read(path, snapshot=None):
             not stat.S_ISREG(before.st_mode)
             or before.st_uid != os.getuid()
             or before.st_nlink != 1
-            or before.st_size > MAX_FILE_BYTES
+            or before.st_size > limit
         ):
             raise core.HomeError("unsafe native configuration file")
         descriptor = os.open(
@@ -65,8 +69,8 @@ def _read(path, snapshot=None):
         if _identity(os.fstat(descriptor)) != _identity(before):
             raise core.HomeError("native configuration changed during read")
         data = bytearray()
-        while len(data) <= MAX_FILE_BYTES:
-            chunk = os.read(descriptor, min(65536, MAX_FILE_BYTES + 1 - len(data)))
+        while len(data) <= limit:
+            chunk = os.read(descriptor, min(65536, limit + 1 - len(data)))
             if not chunk:
                 break
             data.extend(chunk)
@@ -166,10 +170,32 @@ def _json(text):
     def constant(value):
         raise ValueError("nonstandard JSON constant")
 
-    value = json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
+    def finite_float(value):
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            raise ValueError("non-finite native JSON number")
+        return parsed
+
+    value = json.loads(
+        text, object_pairs_hook=pairs, parse_constant=constant, parse_float=finite_float
+    )
     if not isinstance(value, dict):
         raise TypeError("native JSON must be an object")
     return value
+
+
+def _canonical_json(value):
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+        ensure_ascii=False,
+    )
+
+
+def _same_json(left, right):
+    return _canonical_json(left) == _canonical_json(right)
 
 
 def _merge_json(current, desired, previous=None, *, managed=False):
@@ -179,7 +205,7 @@ def _merge_json(current, desired, previous=None, *, managed=False):
     for key in previous.keys() - desired.keys():
         if key not in current:
             continue
-        if key == "hindsight" and current[key] != previous[key]:
+        if key == "hindsight" and not _same_json(current[key], previous[key]):
             raise ValueError("customized Hindsight server cannot be removed")
         if isinstance(previous[key], dict) and isinstance(current[key], dict):
             remaining = _merge_json(current[key], {}, previous[key], managed=managed)
@@ -187,7 +213,7 @@ def _merge_json(current, desired, previous=None, *, managed=False):
                 result[key] = remaining
             else:
                 del result[key]
-        elif current[key] == previous[key]:
+        elif _same_json(current[key], previous[key]):
             del result[key]
         else:
             raise ValueError("customized setting cannot be removed")
@@ -214,8 +240,8 @@ def _merge_json(current, desired, previous=None, *, managed=False):
             for item in value:
                 if item not in result[key]:
                     result[key].append(item)
-        elif current[key] == value or (
-            key in previous and current[key] == previous[key]
+        elif _same_json(current[key], value) or (
+            key in previous and _same_json(current[key], previous[key])
         ):
             result[key] = value
         else:
@@ -377,10 +403,8 @@ def _codex(current, desired, expected):
 
 
 def configure_runtime(home, runtime):
-    """Update only the manifest runtime through the checked publisher."""
+    """Refresh projections when selecting a harness, under the same home lock."""
     from . import publication
-    from .runtimes import RUNTIMES
-
     home = Path(home).expanduser().absolute()
     if ".." in home.parts:
         raise core.HomeError("parent traversal is not allowed")
@@ -390,66 +414,8 @@ def configure_runtime(home, runtime):
         raise core.HomeError("unsafe native home path") from exc
     try:
         with publication.cooperative_lock(root_fd):
-            _verify_root(home, root_chain)
-            snapshot = _NativeSnapshot(home, root_fd, root_chain)
-            try:
-                manifest = core._validate_home(home, reader=snapshot.read)
-                core._assert_clean(home)
-                if runtime not in RUNTIMES:
-                    raise core.HomeError("unsupported runtime")
-                manifest["runtime"] = runtime
-                data = json.dumps(manifest, indent=2) + "\n"
-                relative = "soulsteads.json"
-                _verify_root(home, root_chain)
-                snapshot.verify()
-                parent_fds, parent_chains = _prepare_parents(
-                    root_fd, home, root_chain, (relative,)
-                )
-                published = False
-                try:
-                    _verify_for_publish(
-                        home,
-                        root_chain,
-                        snapshot,
-                        parent_fds,
-                        parent_chains,
-                        (relative,),
-                        {},
-                    )
-                    stat_result = publication.publish_file(
-                        parent_fds[()],
-                        relative,
-                        data,
-                        expected=snapshot.states[_path_key(home, relative)],
-                    )
-                    published = True
-                    outputs = {
-                        _path_key(home, relative): (
-                            data.encode(),
-                            _identity(stat_result),
-                        )
-                    }
-                    _verify_for_publish(
-                        home,
-                        root_chain,
-                        snapshot,
-                        parent_fds,
-                        parent_chains,
-                        (relative,),
-                        outputs,
-                    )
-                except (core.HomeError, OSError) as exc:
-                    if published or getattr(exc, "published", False):
-                        raise core.HomeError(
-                            "native publication partially applied; applied=['soulsteads.json']; remaining=[]; "
-                            "review the retained Home manifest before retrying"
-                        ) from exc
-                    raise
-                finally:
-                    for descriptor in parent_fds.values():
-                        os.close(descriptor)
-            finally:
-                snapshot.close()
+            core._assert_clean(home)
+            return _sync_locked(home, runtime, selected_only=True, root_fd=root_fd, root_chain=root_chain)
     finally:
         os.close(root_fd)
 
@@ -458,11 +424,16 @@ UNSET = object()
 
 
 def plan(
-    home, manifest, *, hindsight=UNSET, learning=UNSET, automation=UNSET, read=None
+    home, manifest, *, hindsight=UNSET, learning=UNSET, automation=UNSET, read=None, selected_runtime=None
 ):
     """Preflight every file before publication. Returns files and ownership hashes."""
     home = Path(home)
     read = read or _read
+    if selected_runtime in (None, "opencode") and read(home / "opencode.jsonc") is not None:
+        raise core.HomeError(
+            "native config refresh does not support OpenCode JSONC; refusing to create or update opencode.json. "
+            "Use settings commands, or explicitly convert the single native document to valid JSON first"
+        )
     documents = {name: read(home / name) for name in IDENTITY_FILES}
     if any(value is None for value in documents.values()):
         raise core.HomeError("required identity file is missing")
@@ -500,10 +471,15 @@ def plan(
         raise core.HomeError(
             "disable recall and retention instead of removing their policy"
         )
-    previous = render_all(
-        documents, previous_hindsight, previous_learning, previous_automation
-    )
-    generated = render_all(documents, hindsight, learning, automation)
+    from .runtimes import render
+    render_native = render_all if selected_runtime is None else lambda *args: render(selected_runtime, *args)
+    previous = render_native(documents, previous_hindsight, previous_learning, previous_automation)
+    generated = render_native(documents, hindsight, learning, automation)
+    from . import native_harness
+
+    native = manifest.get("runtime") == native_harness.NAME
+    generated.pop(native_harness.FILE, None)
+    previous.pop(native_harness.FILE, None)
     managed = manifest.get("managed_files", {})
     if not isinstance(managed, dict) or any(
         not isinstance(path, str)
@@ -514,7 +490,35 @@ def plan(
     ):
         raise core.HomeError("invalid native ownership metadata")
     writes = {}
-    ownership = {path: digest(text) for path, text in generated.items()}
+    ownership = {path: value for path, value in managed.items() if path not in previous} if selected_runtime is not None else {}
+    ownership.update({path: digest(text) for path, text in generated.items()})
+    if native:
+        if hindsight is not None or (automation or {}).get("recall") or (automation or {}).get("retain"):
+            raise core.HomeError(
+                "Hindsight memory and its automation are not supported by the soulsteads native harness; "
+                "run config --no-hindsight first or choose another harness"
+            )
+        for name in IDENTITY_FILES + ("AGENTS.md",):
+            text = documents.get(name) if name in documents else read(home / name)
+            if text is None or len(text.encode("utf-8")) > native_harness.MAX_INSTRUCTION_BYTES:
+                raise core.HomeError(
+                    f"{name} is missing or exceeds the native harness 64 KiB instruction-file limit"
+                )
+        if "LEARNING.md" in generated and len(generated["LEARNING.md"].encode("utf-8")) > native_harness.MAX_INSTRUCTION_BYTES:
+            raise core.HomeError("LEARNING.md exceeds the native harness 64 KiB instruction-file limit")
+        try:
+            current = read(home / native_harness.FILE)
+            text, owned = native_harness.plan(manifest, current, "LEARNING.md" in generated)
+        except (ValueError, TypeError, KeyError) as exc:
+            raise core.HomeError(
+                f"native configuration conflict: {native_harness.FILE}; preserve your edits and review locally"
+            ) from exc
+        manifest.setdefault("shared_owned", {})[native_harness.NAME] = owned
+        ownership[native_harness.FILE] = native_harness.digest_owned(owned)
+        if text != current:
+            writes[native_harness.FILE] = text
+    elif native_harness.FILE in managed:
+        ownership[native_harness.FILE] = managed[native_harness.FILE]
     for relative in dict.fromkeys([*generated, *previous]):
         desired = generated.get(relative, "{}\n")
         try:
@@ -555,8 +559,8 @@ def plan(
                 # Preserve original formatting when no settings changed.
                 result = (
                     current
-                    if current is not None and _json(current) == value
-                    else json.dumps(value, indent=2) + "\n"
+                    if current is not None and _same_json(_json(current), value)
+                    else json.dumps(value, indent=2, allow_nan=False) + "\n"
                 )
             elif relative.endswith(".toml"):
                 result = _codex(current, desired, managed.get(relative))
@@ -770,6 +774,8 @@ def sync(
     automation=UNSET,
     recall=UNSET,
     retain=UNSET,
+    shared_settings=UNSET,
+    selected_only=False,
 ):
     """Refresh native projections through the cooperative publication lock."""
     from . import publication
@@ -789,6 +795,8 @@ def sync(
                 automation=automation,
                 recall=recall,
                 retain=retain,
+                shared_settings=shared_settings,
+                selected_only=selected_only,
                 root_fd=root_fd,
                 root_chain=root_chain,
             )
@@ -805,6 +813,8 @@ def _sync_locked(
     automation=UNSET,
     recall=UNSET,
     retain=UNSET,
+    shared_settings=UNSET,
+    selected_only=False,
     root_fd=None,
     root_chain=None,
 ):
@@ -823,11 +833,14 @@ def _sync_locked(
     try:
         _verify_root(home, root_chain)
         manifest = core._validate_home(home, reader=snapshot.read)
+        manifest_before = _canonical_json(manifest)
         _verify_root(home, root_chain)
         if runtime is not None:
             if runtime not in RUNTIMES:
                 raise core.HomeError("unsupported runtime")
             manifest["runtime"] = runtime
+        if shared_settings is not UNSET:
+            manifest["shared_settings"] = shared_settings
         if recall is not UNSET or retain is not UNSET:
             if automation is not UNSET:
                 raise core.HomeError(
@@ -854,6 +867,7 @@ def _sync_locked(
             learning=learning,
             automation=automation,
             read=snapshot.read,
+            selected_runtime=manifest["runtime"] if selected_only else None,
         )
         if hindsight is not UNSET:
             if hindsight is None:
@@ -864,8 +878,16 @@ def _sync_locked(
             manifest["learning"] = learning
         if automation is not UNSET:
             manifest["hindsight_automation"] = automation
+        if "shared_settings" in manifest or "shared_owned" in manifest:
+            from . import shared
+            manifest["shared_owned"] = shared.plan(home, manifest, writes, snapshot)
         manifest["managed_files"] = managed
-        manifest_text = json.dumps(manifest, indent=2) + "\n"
+        # Selected and all-harness plans enumerate ownership in different orders.
+        # Preserve the existing document when only order/formatting differs, so
+        # a no-op launch or sync does not dirty a committed Home.
+        manifest_text = snapshot.read(home / "soulsteads.json")
+        if _canonical_json(manifest) != manifest_before:
+            manifest_text = json.dumps(manifest, indent=2, allow_nan=False) + "\n"
         if snapshot.read(home / "soulsteads.json") != manifest_text:
             publications = dict(writes)
             publications["soulsteads.json"] = manifest_text
@@ -878,6 +900,7 @@ def _sync_locked(
             return sorted(writes)
 
         _preflight_destinations(root_fd, home, snapshot, relatives)
+        preimages = {relative: snapshot.read(home / relative) for relative in relatives}
         _verify_root(home, root_chain)
         snapshot.verify()
         parent_fds, parent_chains = _prepare_parents(
@@ -885,6 +908,65 @@ def _sync_locked(
         )
         published = {}
         applied = []
+
+        def rollback_published():
+            """Restore preimages only while retained publication identities still bind."""
+            for rollback_relative in reversed(applied):
+                # The output being restored is intentionally different from its admitted
+                # preimage; every other admitted input must remain unchanged.
+                _verify_root(home, root_chain)
+                snapshot.verify(
+                    excluded=tuple(_path_key(home, item) for item in applied)
+                )
+                for parent_parts, expected_chain in parent_chains.items():
+                    descriptor, chain = _open_dir(home.joinpath(*parent_parts))
+                    try:
+                        retained = os.fstat(parent_fds[parent_parts])
+                        if (
+                            chain != expected_chain
+                            or not chain
+                            or chain[-1]
+                            != (
+                                retained.st_dev,
+                                retained.st_ino,
+                                retained.st_mode,
+                                retained.st_uid,
+                            )
+                        ):
+                            raise core.HomeError(
+                                "native destination parent changed before rollback"
+                            )
+                    finally:
+                        os.close(descriptor)
+                key = _path_key(home, rollback_relative)
+                parts = _relative_parts(rollback_relative)
+                expected = published[key][1]
+                before = preimages[rollback_relative]
+                if before is None:
+                    current = os.stat(
+                        parts[-1], dir_fd=parent_fds[parts[:-1]], follow_symlinks=False
+                    )
+                    if (
+                        _identity(current) != expected
+                        or not stat.S_ISREG(current.st_mode)
+                        or current.st_uid != os.getuid()
+                        or current.st_nlink != 1
+                    ):
+                        raise core.HomeError("published native file changed before rollback")
+                    os.unlink(parts[-1], dir_fd=parent_fds[parts[:-1]])
+                    os.fsync(parent_fds[parts[:-1]])
+                else:
+                    publication.publish_file(
+                        parent_fds[parts[:-1]], parts[-1], before, expected=expected
+                    )
+                del published[key]
+                # A restored file has the admitted bytes but intentionally a new inode.
+                # It is no longer an input for further publication in this transaction.
+                snapshot.states.pop(key)
+                snapshot.chains.pop(key)
+                snapshot.hashes.pop(key)
+            _verify_root(home, root_chain)
+            snapshot.verify()
         ordered = list(publications.items())
         for index, (relative, text) in enumerate(ordered):
             try:
@@ -935,6 +1017,19 @@ def _sync_locked(
                     if relative not in applied:
                         applied.append(relative)
                 remaining = [path for path, _ in ordered if path not in applied]
+                if applied and "soulsteads.json" not in applied:
+                    try:
+                        rollback_published()
+                    except Exception as rollback_exc:
+                        raise core.HomeError(
+                            "native publication partially applied and rollback failed; "
+                            f"applied={applied!r}; remaining={remaining!r}; "
+                            "reconcile by reviewing these paths and rerunning config --sync"
+                        ) from rollback_exc
+                    raise core.HomeError(
+                        "native publication failed; published native outputs were rolled back "
+                        "before ownership metadata changed"
+                    ) from exc
                 if applied:
                     raise core.HomeError(
                         "native publication partially applied; "
@@ -965,3 +1060,8 @@ def _sync_locked(
         for descriptor in parent_fds.values():
             os.close(descriptor)
         snapshot.close()
+
+
+def configure_shared(home, config):
+    """Replace canonical shared settings and immediately refresh selected harness."""
+    return sync(home, shared_settings=config, selected_only=True)

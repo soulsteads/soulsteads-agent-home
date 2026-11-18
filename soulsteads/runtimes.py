@@ -3,7 +3,9 @@
 import hashlib
 import json
 
-RUNTIMES = ("opencode", "pi", "claude", "codex")
+EXTERNAL_RUNTIMES = ("opencode", "pi", "claude", "codex")
+NATIVE_RUNTIME = "soulsteads"  # optional first-party harness; see native_harness.py
+RUNTIMES = (*EXTERNAL_RUNTIMES, NATIVE_RUNTIME)
 IDENTITY_FILES = ("SOUL.md", "USER.md", "MEMORY.md")
 SKILL_LINKS = {".agents/skills": "../skills", ".claude/skills": "../skills"}
 CODEX_BEGIN = "# BEGIN SOULSTEADS MANAGED\n"
@@ -110,6 +112,14 @@ def render(runtime, documents=None, hindsight=None, learning=None, automation=No
     from .learning import render as render_learning
 
     policy = render_learning(learning)
+    if runtime == NATIVE_RUNTIME:
+        # Native TOML is merged key-by-key by native_harness.plan; this is its file list.
+        from .native_harness import FILE, baseline
+
+        files = {FILE: baseline({"agent.id": "agent"}, {})}
+        if policy is not None:
+            files[POLICY_FILE] = policy
+        return files
     files = _render_native(runtime, documents, hindsight, policy)
     if policy is not None:
         files[POLICY_FILE] = policy
@@ -147,7 +157,7 @@ def render(runtime, documents=None, hindsight=None, learning=None, automation=No
 def render_all(documents=None, hindsight=None, learning=None, automation=None):
     return {
         path: content
-        for runtime in RUNTIMES
+        for runtime in EXTERNAL_RUNTIMES
         for path, content in render(
             runtime, documents, hindsight, learning, automation
         ).items()

@@ -41,7 +41,8 @@ soulsteads verify helper
 
 `capabilities` emits a versioned JSON matrix without reading an agent Home,
 probing an installed runtime, or contacting a provider. Historical qualified
-versions do not identify your installed version. `verify` adds capabilities and
+versions do not identify your installed version. Add `--probe-versions` (see
+"Opt-in version probe" below) to also compare the installed binaries. `verify` adds capabilities and
 the effective learning mode/target count to each adapter, without exposing skill
 target names, document contents or connection values.
 
@@ -62,12 +63,11 @@ or grant filesystem access. Starting in another unrelated repository does not
 implicitly carry this Home's identity. Project access and trust belong to the
 harness; Agent Home never grants trust or changes approval/sandbox policy.
 
-The qualified exception is maintained Pi 1.4.0:
-`soulsteads run helper --project /path/to/project`. Native Pi flags select Home
-identity/operating guidance and canonical skills while project instructions load
-from the project cwd. Home MCP/provider configuration is not forwarded. Other
-project selectors are rejected in this release. See [current native acceptance](native-acceptance.md)
-for package identity, tested trust boundaries, and unsupported combinations.
+Use `soulsteads run helper --project /path/to/project` to explicitly select Home
+identity and skill guidance in a separate repository. Home MCP/provider settings
+are not forwarded. See [separate-project launch](#separate-project-launch) and
+[current native acceptance](native-acceptance.md) for the per-harness mechanisms,
+versioned qualification and limits.
 
 After editing canonical identity or curated memory, refresh before a new session:
 
@@ -228,6 +228,87 @@ remove a global server. Inspect native configuration precedence if a global
 `hindsight` server remains. Root MEMORY.md stays distinct from external Hindsight
 and each harness's built-in automatic memory.
 
+### Hindsight service configuration
+
+Service deployment remains optional and belongs to Hindsight, not Home. In the
+published [`hindsight-api-slim` 1.2.1 distribution](https://pypi.org/project/hindsight-api-slim/1.2.1/),
+`hindsight_api/config.py` defines
+`HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS`,
+`HINDSIGHT_API_RETAIN_CHUNK_SIZE`, `HINDSIGHT_API_LLM_MAX_RETRIES`,
+`HINDSIGHT_API_RETAIN_LLM_MAX_RETRIES`, `HINDSIGHT_API_LLM_TIMEOUT`,
+`HINDSIGHT_API_ENABLE_AUTO_CONSOLIDATION`, `HINDSIGHT_API_WORKER_ENABLED`,
+`HINDSIGHT_API_EMBEDDINGS_OPENAI_DIMENSIONS`, and
+`HINDSIGHT_API_SKIP_LLM_VERIFICATION`. These are service environment settings;
+Home does not emit or change them. Inspect the owner version before use.
+
+The preflight parsed a 2048-token retention output limit, a 1000-character chunk
+size, zero configured LLM/embedding retries, disabled consolidation/worker, and
+1024 embedding dimensions. The output-token limit must exceed the chunk-size
+setting. The service's startup verification still makes a model call by default:
+`engine/providers/openai_compatible_llm.py::verify_connection` supplies its own
+retry setting. A request/time guard is needed to enforce an aggregate test budget;
+per-operation configuration alone is not an aggregate cap. Skipping a previously
+completed startup check does not qualify retention or recall.
+
+In this version, `api/http.py` exposes resolved bank configuration through
+`GET /v1/default/banks/{bank_id}/config`; the bare bank URL is not that GET route.
+`api/mcp.py` selects single-bank tools from the URL path, while
+`extensions/builtin/tenant.py::ApiKeyTenantExtension` authenticates a tenant.
+That built-in authentication does not establish a bank allowlist. A bank URL or
+rejected extra tool argument must not be advertised as credential-level
+cross-bank authorization.
+
+### Per-principal memory isolation with Hindsight 1.2.1
+
+In this version, the shipped enforcement unit is the **tenant**, not the bank.
+`ApiKeyTenantExtension` accepts exactly one key per service process and maps every
+authenticated request to that process's `HINDSIGHT_API_DATABASE_SCHEMA`. Any
+holder of that key can reach every bank in that schema. This applies to the REST
+routes, the multi-bank `/mcp/` endpoint (which takes a `bank_id` argument), and
+any `/mcp/<bank>/` URL. The package ships no per-key bank allowlist. A custom
+`TenantExtension` or `OperationValidatorExtension` could add one, but that would be
+new authorization code. Home does not provide one.
+
+Isolate principals (for example work, personal and coding agents) using only
+shipped capability:
+
+1. Run one Hindsight service per principal. Set `HINDSIGHT_API_TENANT_EXTENSION`
+   to `hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension`.
+   Each service needs its own fresh key in
+   `HINDSIGHT_API_TENANT_API_KEY`, and its own `HINDSIGHT_API_DATABASE_SCHEMA`.
+   The services can share one PostgreSQL database.
+2. Leave `HINDSIGHT_API_MCP_AUTH_TOKEN` unset and
+   `HINDSIGHT_API_TENANT_MCP_AUTH_DISABLED` unset or false. The former selects
+   legacy MCP authentication; the latter can bypass tenant MCP authentication.
+3. Point each Home at its principal's service. Use a distinct token
+   environment-variable name for each Home:
+
+```sh
+soulsteads config work-agent --hindsight-url https://work-memory.example/mcp/work/ \
+  --hindsight-token-env WORK_HINDSIGHT_TOKEN --sync
+soulsteads config personal-agent --hindsight-url https://personal-memory.example/mcp/personal/ \
+  --hindsight-token-env PERSONAL_HINDSIGHT_TOKEN --sync
+```
+
+Each key then reaches only its own service's schema. Another principal's service
+rejects it with HTTP 401. Naming another bank through the key's own service finds
+only banks in that key's schema, so another principal's data reads as absent. Home
+checks only that the variable is nonempty. It never stores the value and cannot
+confirm that two Homes use different keys or services. The operator must keep
+them distinct.
+
+These settings were checked in the published 1.2.1 distribution linked above:
+`extensions/builtin/tenant.py::ApiKeyTenantExtension` defines key/schema mapping
+and the MCP auth-disable option; `extensions/loader.py::_collect_config` reads
+the tenant environment variables; `config.py` defines the database schema and
+legacy MCP token fields; `api/mcp.py::MCPMiddleware` selects MCP authentication.
+
+The boundary is the key-to-service binding. Banks *within* one tenant are not
+isolated from each other. In this topology, all services connect to PostgreSQL
+with whatever role you configure. Separate database roles per schema are
+stronger, but they were not qualified here. See the
+[memory compatibility limits](native-acceptance.md#optional-memory).
+
 ## Automatic Hindsight memory
 
 After configuring a bank, select either operation independently:
@@ -325,8 +406,8 @@ by `verify` and `capabilities`. No ordinary test accesses a real memory bank.
 `soulsteads verify` checks basic syntax, native projection freshness, private
 storage, skill metadata, and safe aliases without launching a harness or fixing
 files. It reports each adapter's paths and loading mechanism, required native
-trust/reload actions, and an **unverified** runtime version; it does not probe or
-install a harness. Configured memory always retains a separate qualification
+trust/reload actions, and an **unverified** runtime version; by default it does
+not probe or install a harness (see the opt-in probe below). Configured memory always retains a separate qualification
 finding. A missing credential is actionable, but a present variable is not proof
 of valid authorization, server availability, correct bank, or native approval.
 `needs-review` is not activation proof. Generated files cannot guarantee that a
@@ -373,6 +454,60 @@ does not provide the current native MCP surface; do not infer support from its
 `pi` executable name. Skill execution, session lifecycle and older client versions
 are not qualified here.
 
+### Opt-in version probe
+
+`soulsteads verify <agent> --probe-versions` (and `soulsteads capabilities
+--probe-versions`) runs `<binary> --version` for Pi, OpenCode, Codex and Claude
+and adds a `version_probe` object (per runtime for `capabilities`). Without the
+flag nothing is executed and the output is byte-for-byte unchanged. The probe
+never alters findings, the `verify` exit status, `runtime_version` (which stays
+`unverified`), permissions or privacy settings.
+
+Each binary reports one status:
+
+| Status | Meaning |
+| --- | --- |
+| `qualified` | The parsed version equals a version recorded below. |
+| `newer-unqualified` | Newer than every recorded version. |
+| `older-unqualified` | Not recorded and not newer than the newest recorded version (including versions between recorded ones). |
+| `unparseable` | No single strict `MAJOR.MINOR.PATCH` in the output (pre-releases, several different versions, or oversized output are refused). |
+| `not-installed` | No executable of that name on `PATH`. |
+| `probe-failed/timeout` | Could not execute, exited non-zero, or exceeded 5 seconds; `reason` is one of `exec-error`, `non-zero-exit`, `timeout`. |
+| `probe-skipped` | Not qualified and not executed: the binary is a version-manager shim or wrapper that could not be safely resolved; `reason` is `unresolved-mise-shim` or `wrapper:<manager>` (`volta`, `asdf`, `pyenv`, `shim`, ...). |
+
+Qualified versions come only from `docs/native-acceptance.md`: Pi 1.4.0 and
+OpenCode 1.19.5 (the maintained Pi and OpenCode records); Codex CLI 0.157.1 and
+0.169.0; Claude Code 2.1.270, 2.1.318 and 2.1.325. A runtime with no recorded
+version would report `no qualified version recorded` and is never `qualified`.
+
+Limits: binaries are found on `PATH` the way Home's launcher finds them, and
+are executed directly (no shell, argv list, stdin closed, own process group
+killed on timeout, 4 KiB cap per stream, only `PATH`, `HOME`, locale, `TMPDIR`
+and user-name variables inherited, plus `NO_COLOR=1` and mise auto-install
+switches set to `0`). Every process the probe starts runs from the neutral
+working directory `/`, so project `mise.toml` or `.tool-versions` files cannot
+select a version, and `MISE_AUTO_INSTALL`, `MISE_EXEC_AUTO_INSTALL` and
+`MISE_NOT_FOUND_AUTO_INSTALL` are `0`.
+
+Shim handling: after `PATH` lookup (no extra search paths) the path and its
+symlink target are checked before anything runs. Recognised wrappers are mise
+(`*/mise/shims/*`, `*/mise/command-wrappers/*`, or a symlink to `mise`), asdf
+(`*/.asdf/shims/*`), volta (`*/.volta/bin/*` or a symlink to `volta`/`volta-shim`),
+pyenv (`*/.pyenv/shims/*`), any other `*/shims/*` directory (nodenv/rbenv style),
+and scripts whose first `#!` line names one of these managers. For a mise shim the
+probe runs `mise which <name>` once (same limits, no shell) and only accepts an
+absolute path to an existing, executable, non-wrapper file, which it then probes
+directly (`resolved_via: "mise which"`). If that fails, or the wrapper is not
+mise, nothing is executed and the status is `probe-skipped`. This cannot detect
+arbitrary unknown wrappers: a binary behind a wrapper this list does not know is
+still run directly, so probe only binaries you are willing to run.
+The probe writes no file, reads no Home
+configuration, makes no provider, model or network request, and starts no
+authentication flow. Version output is untrusted: only a strictly parsed
+version is printed. **A version match is not live qualification.** It does not
+show that this Home's adapter, permissions, memory or models work with that
+binary; any error maps to a non-qualified status, never `qualified`.
+
 ## First-party references
 
 The configurable learning policy reuses existing native instruction surfaces;
@@ -414,4 +549,166 @@ qualification. Older clients without those events cannot provide this automation
   [settings](https://code.claude.com/docs/en/settings),
   [skills](https://code.claude.com/docs/en/skills), [MCP](https://code.claude.com/docs/en/mcp).
 - Hindsight: [MCP server](https://github.com/vectorize-io/hindsight/blob/main/hindsight-docs/docs/developer/mcp-server.md),
-  [optional maintained coding-agent integration](https://github.com/vectorize-io/hindsight/tree/main/hindsight-integrations/coding-agents).
+  - Optional maintained coding-agent integration: [Hindsight](https://github.com/vectorize-io/hindsight/tree/main/hindsight-integrations/coding-agents).
+
+## Separate-project launch
+
+`soulsteads run helper --project /path/to/project` selects a separate working
+repository while carrying the selected Home's identity and skill guidance.
+`prepare_launch(home, runtime, project, extra=())` returns the native arguments,
+child environment and project working directory; extra arguments stay literal.
+For OpenCode/Pi it returns an explicit resource lease: keep the returned object
+in a `with` block through native execution, or close it in `finally`. The CLI
+handles that lifetime. Preview mode (`preview=True`, selected by `--dry-run`)
+returns a non-executable descriptor without creating private copies. See the
+[snapshot lifetime and security boundary](settings.md#separate-projects).
+No adapter copies Home-wide authentication/session directories or writes
+project/global config. Selected relative skill assets are copied verbatim.
+
+**Private argv consent:** Codex and Claude place the selected Home context in
+process arguments, which may be readable by other local users or process
+monitors even when Home files are private. These project adapters refuse to run
+unless `--allow-context-in-argv` is supplied (or `allow_context_in_argv=True` is
+passed to the API). Use a Home-root launch instead if that tradeoff is not
+acceptable. A private-file transport for these interactive modes is not qualified
+here. Dry-run output always redacts their inline Home text.
+
+- **Maintained Pi:** native `--append-system-prompt` paths carry the Home identity
+  projection and AGENTS; `--skill` paths select private per-launch copies of
+  the canonical Home skills and their relative assets.
+- **Codex:** native `--cd` selects the project and a per-run
+  `--config developer_instructions=...` value carries bounded Home identity,
+  AGENTS and canonical SKILL.md content. This selects the Home developer-guidance
+  value for that run, rather than merging arbitrary ambient developer strings.
+  Identity and learning policy come from the selected Home's synchronized
+  `.codex/config.toml` `developer_instructions`, not another runtime's projection.
+  This is the existing upstream [Codex field](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/core/config.schema.json),
+  also read back through native 0.169.0 `config/read`; no new configuration key
+  or global setting is introduced. Selected-only sync may leave other adapters
+  stale, so their projections are not authoritative for a Codex launch.
+  Skills are prompt content, not Codex-native slash-skill registration. Neither
+  `CODEX_HOME` nor `--add-dir` is changed.
+- **Claude Code:** `--append-system-prompt` carries the same bounded Home content.
+  This is not Claude-native slash-skill registration; no `--add-dir` is used.
+- **OpenCode:** process-local `OPENCODE_CONFIG_CONTENT` adds Home instruction
+  files and skill search paths from the same private resource lease, not mutable
+  Home pathnames. An existing inline configuration
+  retains its unrelated model/provider/permission fields, instruction paths,
+  skill paths and skill URLs. Native discovery does not prove skill activation.
+
+Codex/Claude inline context is bounded to avoid silently dropping Home content
+or exceeding command-line limits. Oversized context is refused. These mechanisms
+are not filesystem sandboxes, do not grant trust, and do not change the native
+approval or sandbox settings merely by selecting a project. Native-only Home
+settings are not copied. Codex receives explicitly configured canonical shared
+model/provider/MCP settings and any explicitly requested supported permission
+through native CLI overrides; see [shared settings](shared-settings.md).
+
+### Qualification and limits
+
+The focused project tests exercise deterministic arguments, environment handling,
+context markers, no-shell behavior and unchanged Home/project state. Independent native request
+fixtures additionally exercised Codex 0.157.1, Claude Code 2.1.318 and OpenCode
+1.19.5 with a separate synthetic project. Each native request included Home
+SOUL/USER/MEMORY/AGENTS markers, both canonical skill-description markers and
+project instructions. The project inventory stayed unchanged. Each request was
+stopped by a loopback HTTP 400; no model task completed or real credential was
+used. Maintained Pi 1.4.0 retains its earlier direct-Home resource-loading
+qualification. The new leased handoff was separately checked with OpenCode 1.19.5
+(actual loopback HTTP 400 request) and Pi 1.5.2 (actual offline resource loader):
+Home source replacement after preparation did not change loaded identity, skill
+or project markers; Pi also loaded a relative skill asset from the leased copy.
+This does not certify inference, bank persistence, resume or compaction.
+
+For a local check, use a disposable Home and project, inspect the redacted dry run,
+and confirm what the selected native harness loads before using private content.
+
+Official native references:
+
+- Codex [configuration](https://developers.openai.com/codex/config-reference/)
+  and [CLI](https://developers.openai.com/codex/cli/reference).
+- Claude Code [CLI](https://code.claude.com/docs/en/cli-reference)
+  and [skills](https://code.claude.com/docs/en/skills).
+- OpenCode [configuration](https://opencode.ai/docs/config/),
+  [instructions](https://opencode.ai/docs/instructions/) and
+  [skills](https://opencode.ai/docs/skills/).
+
+## Soulsteads native harness (`--runtime soulsteads`, optional)
+
+First-party harness `soulsteads-harness` 0.1.0; fields verified against its public
+configuration reference (README "Configuration reference") and
+the accepted binary's `capabilities` loader. The harness, not Home, owns
+runtime/session/tool decisions. Home writes `soulsteads-harness.toml` at the Home
+root and records the keys it owns in `soulsteads.json` (`shared_owned.soulsteads`);
+every other key/comment/table is operator-owned and preserved. An owned key edited
+natively, or an existing differing native value, is a conflict: sync refuses and
+changes nothing.
+
+| Canonical | Native |
+| --- | --- |
+| identity, curated memory, learning policy | `agent.id`, `agent.instructions_files` = AGENTS/SOUL/USER/MEMORY[/LEARNING].md (each <= 64 KiB). Changed text on a resumed session needs `--allow-instruction-change`; start a fresh session instead. |
+| skills | `skills.roots = ["skills"]` (real directory, not the `.agents/.claude` symlinks); skills grant nothing, scripts never run |
+| `model` | `provider.model` |
+| `permission: read-only` | `grants.workspace = "workspace"` (Home workspace only), `grants.tools = [read_file, list_dir, search_files]` |
+| `permission: workspace-write` | same workspace grant, `grants.tools = [read_file, write_file, edit_file, list_dir, search_files]`; no `run_command`, shell or network; approvals stay native-owned (default `allow`; set `[grants] approval = { write_file = "ask" }` natively to gate writes) |
+| stdio `mcp` | `[[mcp_servers]]` `default_approval = "ask"`; empty child environment; calls need `run --approve-ask` or the `chat` terminal |
+
+Unsupported (explicit error, nothing written): shared `provider` (the single
+openai-compat endpoint is operator-owned: add `[provider] base_url_env` natively),
+any `permission` except `read-only` and `workspace-write`, Hindsight/automation, `--project` launch
+(would broaden the workspace grant), MCP names outside `[a-z0-9-]{1,24}`, Home names longer than the native agent id limit (64 chars; checked before create/runtime switch, external homes unaffected).
+Native-only: limits, `run_command`/`[commands]`, per-tool approval, HTTP MCP
+(e.g. a Forge public MCP URL with `header_value_env`), ACP/A2A. No hooks.
+
+`soulsteads run <agent> -- run "task"` executes
+`soulsteads-harness --config <home>/soulsteads-harness.toml --home <home>/.runtime/soulsteads-harness …`
+(binary: `$SOULSTEADS_HARNESS_BIN` or `soulsteads-harness` on PATH); state stays in the
+Git-ignored `.runtime/`. Switching to or from an external harness is
+`soulsteads config <agent> --runtime <name>`; the native file is left untouched while
+another harness is selected. Editing an existing native file needs the `settings` extra.
+
+### Launch through Messaging
+
+Messaging's public `acp.backends.soulsteads` command/args/environment interface can
+invoke the installed Home CLI. Prepare an isolated Home through `create`, install
+local skills through `skill install`, and set canonical model/file permissions
+through `config --shared-json`. Set `provider.base_url_env` and bounded native
+limits in its generated TOML as operator-owned settings. Preserve native
+approvals. Home synchronizes its owned keys again on every `run`.
+
+For example, this backend fragment assumes an existing `/srv/agents/helper`
+using runtime `soulsteads`, canonical `permission: workspace-write`, and native
+`provider.base_url_env = "HARNESS_BASE_URL"`:
+
+```json
+{
+  "acp": {
+    "defaultBackend": "soulsteads",
+    "backends": {
+      "soulsteads": {
+        "command": "/opt/home/bin/soulsteads",
+        "args": ["run", "/srv/agents/helper", "--", "acp"],
+        "agentHome": "/srv/agents/helper/workspace",
+        "env": {
+          "SOULSTEADS_HARNESS_BIN": "/opt/harness/bin/soulsteads-harness",
+          "HARNESS_BASE_URL": "{env:HARNESS_BASE_URL}"
+        }
+      }
+    }
+  }
+}
+```
+
+This is a backend fragment, not a complete connector configuration. Configure
+the bridge's persistent session store and the connector's explicit sender/room
+allowlists separately. Keep credentials in private configuration or environment
+references. Messaging's `agentHome` here must match the generated native
+workspace grant, **not the canonical Home root**: ACP validates that cwd. Home
+launches from its own root and passes explicit config and ignored runtime-state
+paths. The bridge owns chat bindings; the native harness owns execution/history.
+
+Messaging's built-in `soulsteads` backend queues up to eight pending texts in an
+active Matrix thread. It submits them in order after successful completion, not
+as live steering. If a turn is cancelled or fails, unsubmitted texts are dropped.
+The queue is not durable. Cancellation does not undo completed work or establish
+that the provider stopped. See [compatibility limits](native-acceptance.md#messaging-and-the-optional-native-harness).
