@@ -214,7 +214,10 @@ Codex editing requires the optional `settings` extra. The manager also supports
 unset, ordered batches, advanced native fields and portable same-harness
 profiles. External user/project layers are read-only, managed identity is
 protected, and credentials belong in native secret storage rather than plans.
-Static inspection is not a claim of runtime-effective precedence. See the
+Applying a saved plan checks that the Home and native files still match the
+reviewed preview. If they changed, create and review a new plan rather than
+reusing the old one. Inspection does not resolve every runtime override, such
+as command-line flags, environment, trust, or policy. See the
 [settings guide](docs/settings.md) for formats, references and safety limits.
 
 ### Optional Hindsight memory tools
