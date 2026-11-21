@@ -149,6 +149,13 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(report["status"], "passed")
         self.assertFalse(report["activation_ready"])
         self.assertEqual(report["scope"], "offline-structural")
+        for unverified in (
+            "provider-identity",
+            "provider-fallback",
+            "chat-ownership-routing",
+            "network-permissions",
+        ):
+            self.assertIn(unverified, report["not_verified"])
         self.assertEqual(
             before,
             {

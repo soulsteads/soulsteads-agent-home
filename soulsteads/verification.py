@@ -391,6 +391,10 @@ def verify_home(home, probe_versions=False):
         "not_verified": [
             "runtime-execution",
             "model-access",
+            "provider-identity",
+            "provider-fallback",
+            "chat-ownership-routing",
+            "network-permissions",
             "external-memory",
             "mcp-connectivity",
             "permissions-equivalence",
