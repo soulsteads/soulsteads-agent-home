@@ -133,6 +133,22 @@ class HermesImportTests(unittest.TestCase):
         applied = import_profile(
             "helper", self.source, workspace=workspace, path=self.destination
         )
+        def transfer_states(item):
+            return {
+                entry["id"]: entry["state"]
+                for entry in item["compatibility"]["readiness"]["transfers"]
+            }
+
+        self.assertEqual(
+            transfer_states(inspected)["portable-instructions"], "planned"
+        )
+        self.assertEqual(transfer_states(applied)["portable-instructions"], "copied")
+        self.assertTrue(
+            all(
+                check["status"] == "not_run"
+                for check in applied["compatibility"]["readiness"]["runtime_checks"]
+            )
+        )
         for report in (inspected, applied):
             serialized = json.dumps(report)
             self.assertNotIn(str(self.source), serialized)
@@ -143,6 +159,10 @@ class HermesImportTests(unittest.TestCase):
         receipt_path = self.destination / ".runtime/hermes/IMPORT-RECEIPT.json"
         receipt = json.loads(receipt_path.read_text())
         self.assertEqual(receipt["source_path"], str(self.source))
+        self.assertEqual(
+            receipt["compatibility"]["readiness"],
+            applied["compatibility"]["readiness"],
+        )
         self.assertEqual(receipt["destination_path"], str(self.destination))
         self.assertEqual(receipt["name"], "helper")
         self.assertEqual(receipt["profile"], "default")

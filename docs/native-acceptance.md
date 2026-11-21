@@ -72,3 +72,54 @@ Installing the CLI does not migrate a live Home.
 A partial-publication error is not a rollback. Inspect applied and remaining
 paths before retrying. The publication lock is not a lock for arbitrary
 editors or all Git and native processes.
+
+## Witnessed migration-readiness checks
+
+The import readiness report is a portable-file plan plus a manual acceptance list,
+not a runtime result. Preview and import leave every runtime check at `not_run`.
+The separate `soulsteads verify` report is offline-structural; its overall
+`passed` status covers only local structural checks and cannot promote a readiness
+check. `passed` for a runtime check requires direct evidence from the target
+runtime; use `failed` only for an observed failure. Static configuration, file
+presence, mocked tests, a successful import, or a network/permission setting cannot
+establish provider identity, route ownership, tool availability, or isolation.
+
+Run these checks only in a disposable, private target environment with synthetic
+content. Keep detailed evidence private and outside the public report.
+
+1. **Identity and instructions:** Start the native runtime with a synthetic profile.
+   Confirm that it loaded the intended identity and instructions, not merely that
+   the files were copied. Use a harmless synthetic marker and compare the runtime's
+   observed context with the expected marker.
+2. **Workspace:** Select a disposable workspace containing a distinct synthetic
+   instruction marker. Confirm that the native runtime uses that workspace and does
+   not silently fall back to another one.
+3. **Skills:** Confirm that each selected skill is discoverable by the native
+   runtime, then run only a harmless, deterministic synthetic check. File presence
+   alone does not pass this check.
+4. **Required tool/MCP dependency:** If a required tool or MCP server is selected,
+   invoke each required tool/MCP dependency with a harmless, bounded operation in
+   a private test environment and observe the actual result and authorization
+   boundary. Do not use a live write, account, or external destination.
+5. **Provider identity and fallback:** Observe the provider identity for a harmless
+   synthetic request. If fallback is required, trigger a controlled provider
+   failure before any output, then observe which fallback provider/model answers
+   and confirm no earlier output was emitted. Skip this check only when fallback
+   is not required; a configured fallback name is not evidence of correctness.
+6. **Chat ownership and routing:** Verify account ownership and the intended route
+   with a private test account and destination. Confirm one synthetic message reaches
+   only that destination. Do not connect a live messaging channel as part of import.
+7. **Permissions and network boundary:** Exercise one intended allow and one intended
+   deny case in an isolated environment, observing the actual operation and result.
+   A static policy file or local network availability is not a pass.
+8. **Hindsight scope:** Only if external memory is selected, write a non-sensitive
+   synthetic marker to a fresh isolated scope and retrieve it from a new session in
+   that same scope. Then query it from a separate synthetic scope and confirm the
+   request is denied or returns no data. Remove the synthetic test store afterward.
+   Do not use actual bank data, personal records, or retention history.
+
+Portable identity/instructions, workspace files, and skills are distinct from
+native sessions, OAuth, messaging connections, schedules, Vault entries, Hermes
+transcript history, and Hindsight records. Those items are deliberately not
+transferred. This checklist does not establish a private migration proof until a
+reviewer witnesses the named target-runtime checks.

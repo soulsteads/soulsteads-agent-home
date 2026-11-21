@@ -84,6 +84,29 @@ OAuth credentials whether or not those states exist. They describe boundaries;
 they do not mean the importer inspected those stores. No new connection,
 permission, scheduled job, or external memory behavior is enabled.
 
+### Actionable readiness
+
+The additive `compatibility.readiness` object keeps the existing compatibility
+`schema_version` and `findings` shape intact. Its fixed-ID `transfers` distinguish
+`planned`, `copied`, `missing_manual_setup`, `manual_setup`, `not_selected`,
+`not_configured`, and `not_transferred`. A preview reports selected portable files
+as `planned`; an applied import changes those entries to `copied` only after it
+writes them. `copied` means file transfer only, not that the target runtime loaded
+the file.
+
+`runtime_status_values` lists `not_run`, `passed`, and `failed`. Import and preview
+always leave each exact `runtime_checks` entry at `not_run`. The importer has no
+runtime-check recorder. Static configuration, permissions, local connectivity,
+or mocked tests cannot turn a runtime check into `passed`; record a result only
+after witnessing the named check in the target runtime, with details kept in a
+private review record rather than the public report.
+
+Configured fallback models are manual setup, not proof of provisioning or correct
+provider/model identity. Chat ownership and routing, required tool/MCP availability,
+permissions, and external-memory scope also remain manual. The public readiness
+report uses fixed identifiers and action text; it does not include arbitrary
+configuration keys, values, endpoints, tokens, internal paths, or document contents.
+
 ### Workspace instructions
 
 If identity instructions live in a workspace rather than the profile, explicitly

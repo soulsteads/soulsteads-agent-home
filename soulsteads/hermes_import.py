@@ -628,6 +628,9 @@ def import_profile(
             destination.write_bytes(raw)
             destination.chmod(0o600)
         report.update(status="imported")
+        from .compatibility import mark_copied
+
+        mark_copied(report["compatibility"]["readiness"])
         private_receipt = {
             **report,
             "source_path": str(selected),
