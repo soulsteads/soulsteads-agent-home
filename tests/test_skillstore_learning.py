@@ -85,6 +85,20 @@ class SkillstoreLearningTests(unittest.TestCase):
             remote.assert_not_called()
         self.assertEqual(self.skill.read_text(), changed)
 
+    def test_scoped_apply_rejects_unlisted_bound_skill_before_registry_access(self):
+        self.bind()
+        sync(
+            self.home, learning={"mode": "scoped-apply", "skills": ["skill-maintenance"]}
+        )
+        original = self.skill.read_bytes()
+        with patch.object(
+            skillstore, "_command", side_effect=AssertionError("registry called")
+        ) as remote:
+            with self.assertRaisesRegex(core.HomeError, "outside this Home"):
+                skillstore.learn(self.home, "starter", self.change)
+            remote.assert_not_called()
+        self.assertEqual(self.skill.read_bytes(), original)
+
     def test_auto_requires_scope_and_distinct_reviewer(self):
         sync(self.home, learning={"mode": "auto", "skills": ["skill-maintenance"]})
         with patch.object(skillstore, "_command") as remote:
