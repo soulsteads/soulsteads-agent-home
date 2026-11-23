@@ -83,12 +83,14 @@ A separate Codex session ran `soulsteads skill review .` with the skill name
 inside its read-only sandbox and returned the same review ID as an independent
 operator preview. The second proposal left the skill untouched.
 
-On OpenCode 2.4.0 and Claude Code 2.1.330, live requests to a loopback model
-included the Home learning policy and the revised skill body when the skill
-file was explicitly supplied. This exercises explicit file selection. Automatic
-skill selection and reliable model-led approval are separate behaviors. In a
-separate command-recall turn, the small local model suggested an invalid
-`--review-id` option. Preview takes no ID; only apply takes `--apply REVIEW_ID`.
+OpenCode 2.4.0 and Claude Code 2.1.330 each returned the revised code in a
+fresh session with the skill file explicitly referenced. Requests to the local
+Qwen2.5-1.5B-Instruct model included both the Home learning policy and the new
+skill body. OpenCode also called its native `skill` tool for the correct skill;
+the completed tool result contained the revised body. A separate OpenCode run
+without the explicit reference timed out. On a command-recall question, the
+small model in Claude Code suggested an invalid `--review-id` flag. Preview
+takes no ID; only apply takes `--apply REVIEW_ID`.
 
 To repeat the check, install the candidate CLI, create a disposable Home and
 install a synthetic skill with a unique response in its body. Ask Pi for the
