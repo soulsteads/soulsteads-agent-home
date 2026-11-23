@@ -1,5 +1,6 @@
 """Adapter capabilities, not a probe of installed harnesses or model behavior."""
 
+from .learning import MODES
 from .runtimes import RUNTIMES
 
 _VERSIONS = {
@@ -64,7 +65,7 @@ def for_runtime(runtime):
         "learning": {
             "support": "model-followed-instructions",
             "evidence": "source-tested",
-            "modes": ["off", "propose", "scoped-apply"],
+            "modes": list(MODES),
             "scope_enforced_by_soulsteads": False,
             "background_learner": False,
             "behavior": "unverified",

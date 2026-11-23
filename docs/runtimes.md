@@ -152,8 +152,11 @@ soulsteads config helper --learning off
   `skills/<name>/SKILL.md` files explicitly named by repeated `--learning-skill`.
   Preserve metadata, validate corrections, and report each applied diff and evidence.
 
-Every `--learning scoped-apply` selection requires its complete target list;
-other modes reject targets. A bare `--sync` retains the stored mode and scope.
+- **auto:** [submit, approve and adopt Skillstore corrections automatically](#automatically-approve-and-adopt-skillstore-corrections)
+  for the named skills.
+
+Each `scoped-apply` or `auto` selection requires its complete target list.
+The other modes reject targets. A bare `--sync` retains the stored mode and scope.
 Targets must be unique local skill names, not paths or patterns, and their files
 must exist. New Homes may name only the bundled skills actually being created;
 install other inspected local skills first, then configure them. `--no-skills`
@@ -176,13 +179,12 @@ the generated policy; owned-file conflicts are refused before publication.
 Changes use the same [publication contract](publication-contract.md) as identity
 and memory configuration. Review the diff and start a fresh native session.
 
-This is a skill-learning instruction convention. Scope is checked when compiling
-configuration, but Soulsteads does not mediate the harness's later file writes.
-Native permissions and approvals remain authoritative. The policy excludes
-supporting scripts, identity/config changes, permissions, credentials, plugins,
-schedules, installations, commits and external actions. It grants no memory-write
-or Hindsight-retention authority. Curated facts, service-owned memory and temporary
-handoffs remain separate. No lifecycle hook or background learner is installed.
+The harness identifies opportunities for skill improvements during work.
+`soulsteads skill learn` enforces the auto scope and runs the configured
+Skillstore actions. Native permissions govern tool calls and direct file writes.
+Keep supporting scripts, identity, credentials, memory, and other runtime
+configuration under their separately configured workflows. The harness must be
+able to run the CLI and reach Skillstore from the session for unattended learning.
 
 ## Explicit Hindsight tools
 
@@ -802,3 +804,41 @@ frontmatter, and requires a release that differs only in `SKILL.md`.
 To undo an adoption, preview and adopt the earlier reviewed version using
 the same commands. This restores just the skill body. Start a fresh harness
 session to load the adopted version.
+
+### Automatically approve and adopt Skillstore corrections
+
+Use a separate Skillstore service reviewer for the skills you want to update
+automatically. The reviewer must already be in the registry's reviewer list.
+For a served registry, supply a token issued to that reviewer with
+`skillstore --kind service token ...`. Keep the contributor token issued to
+the agent under a different identity. For a local directory registry, specify
+both actors and omit the two token options. Directory mode trusts the local
+OS account to declare actors.
+
+```sh
+soulsteads skill bind . shipping --store https://skills.example.net \
+  --version 1.0.0 --actor shipping-agent --token-env SHIPPING_SKILLSTORE_TOKEN \
+  --reviewer-actor shipping-auto --reviewer-token-env SHIPPING_REVIEWER_TOKEN
+soulsteads config . --learning auto --learning-skill shipping
+```
+
+Start a fresh native session. Its learning policy calls
+`soulsteads skill learn` when it finds a reusable correction for a named skill.
+The command validates the edit, submits it from the contributor, approves it
+with the service reviewer, and adopts the verified release in the active Home.
+For a new approval it requires the latest reviewed stable base and increments
+that version's patch number. The command returns the proposal ID, new release
+version and digest.
+
+An approval error reports the proposal ID when available. Retry the same
+proposal to reuse its recorded state. If Skillstore already accepted it but the
+Home update was interrupted, the retry verifies the accepted release and
+finishes adoption. A rejected proposal stays rejected. Use `skill adopt` to
+return to an earlier reviewed version.
+
+Set `--learning propose` to return to pending proposals, or `--learning off`
+to stop learning. To remove the reviewer association, repeat `skill bind` with
+the active version and omit the reviewer flags. Keep the service credential
+private. A harness that can read its environment can use the reviewer token
+with the registry privileges that token carries. Use a dedicated registry or
+service account for the skills you intend to automate.

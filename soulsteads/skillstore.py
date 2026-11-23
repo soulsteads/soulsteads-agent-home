@@ -15,6 +15,7 @@ from . import core, native_config, publication
 from .skill_review import open_skill, skill_body
 
 VERSION = re.compile(r"[0-9][0-9A-Za-z.+-]{0,127}")
+STABLE_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 ACTOR = re.compile(r"[0-9A-Za-z_.@-]{1,100}")
 TOKEN_ENV = re.compile(r"[A-Za-z_][A-Za-z_0-9]{0,127}")
 
@@ -39,7 +40,7 @@ def _binding(target):
     try:
         binding = json.loads(raw)
         if (
-            set(binding)
+            set(binding) - {"reviewer"}
             != {
                 "store",
                 "actor",
@@ -54,6 +55,14 @@ def _binding(target):
         _validate_binding(
             target, binding["store"], binding["actor"], binding["token_env"]
         )
+        if "reviewer" in binding:
+            reviewer = binding["reviewer"]
+            if not isinstance(reviewer, dict) or set(reviewer) != {
+                "actor",
+                "token_env",
+            }:
+                raise ValueError
+            _reviewer_binding(target, binding, reviewer["actor"], reviewer["token_env"])
         return binding if binding["versions"] else None
     except (TypeError, ValueError):
         raise core.HomeError("invalid private Skillstore binding") from None
@@ -95,20 +104,39 @@ def _validate_binding(target, store, actor, token_env):
             )
 
 
-def _command(binding, *args):
+def _reviewer_binding(target, binding, actor, token_env):
+    if actor is None or actor == binding["actor"]:
+        raise ValueError("choose a separate Skillstore service reviewer")
+    _validate_binding(target, binding["store"], actor, token_env)
+    if token_env is not None and token_env == binding["token_env"]:
+        raise ValueError(
+            "use distinct Skillstore contributor and reviewer token variables"
+        )
+    if not binding["auto_submit"]:
+        raise ValueError("a service reviewer requires automatic submission")
+    return {"actor": actor, "token_env": token_env}
+
+
+def _command(binding, *args, reviewer=False):
     executable = shutil.which("skillstore")
     if not executable:
         raise core.HomeError("install the Skillstore CLI and put it on PATH")
+    identity = binding["reviewer"] if reviewer else binding
+    reviewer_env = binding.get("reviewer", {}).get("token_env")
+    hidden = {binding["token_env"], reviewer_env}
     env = {
         key: value
         for key, value in os.environ.items()
-        if not key.startswith("SKILLSTORE_")
+        if key not in hidden and not key.startswith("SKILLSTORE_")
     }
-    if binding["token_env"]:
-        token = os.environ.get(binding["token_env"])
+    if identity["token_env"]:
+        token = os.environ.get(identity["token_env"])
         if not token:
+            role = "reviewer" if reviewer else "contributor"
+            raise core.HomeError(f"configured Skillstore {role} token is unavailable")
+        if reviewer and token == os.environ.get(binding["token_env"]):
             raise core.HomeError(
-                "configured Skillstore contributor token is unavailable"
+                "Skillstore contributor and reviewer tokens must differ"
             )
         env["SKILLSTORE_TOKEN"] = token
     try:
@@ -118,9 +146,9 @@ def _command(binding, *args):
                 "--store",
                 binding["store"],
                 "--kind",
-                "agent",
+                "service" if reviewer else "agent",
                 "--actor",
-                binding["actor"],
+                identity["actor"],
                 *args,
             ],
             env=env,
@@ -231,7 +259,18 @@ def _package_digest(files):
     return "sha256:" + _sha(data)
 
 
-def bind(home, name, version, *, store, actor, token_env, auto_submit):
+def bind(
+    home,
+    name,
+    version,
+    *,
+    store,
+    actor,
+    token_env,
+    auto_submit,
+    reviewer_actor=None,
+    reviewer_token_env=None,
+):
     with open_skill(home, name) as target:
         previous = _binding(target)
         if store is None:
@@ -251,6 +290,13 @@ def bind(home, name, version, *, store, actor, token_env, auto_submit):
             else {},
             "auto_submit": auto_submit,
         }
+        if reviewer_actor is not None or reviewer_token_env is not None:
+            wanted["reviewer"] = _reviewer_binding(
+                target,
+                wanted,
+                reviewer_actor,
+                reviewer_token_env,
+            )
         with tempfile.TemporaryDirectory(prefix="soulsteads-skillstore-") as work:
             _, text, release = _stage(wanted, name, version, Path(work) / "base")
         if target.original != text:
@@ -268,9 +314,91 @@ def bind(home, name, version, *, store, actor, token_env, auto_submit):
             "status": "bound",
             "skill": name,
             "auto_submit": auto_submit,
+            "auto_review": "reviewer" in wanted,
             "version": version,
             "digest": release["digest"],
         }
+
+
+def _automatic_version(base):
+    match = STABLE_VERSION.fullmatch(base)
+    if not match or len(base) > 120:
+        raise core.HomeError("auto learning requires a stable Skillstore base version")
+    major, minor, patch = match.groups()
+    return f"{major}.{minor}.{int(patch) + 1}"
+
+
+def _approve_automatically(binding, name, result, base_version, version, digest):
+    proposal_id = result["id"]
+    contributor = result.get("submitted_by", {})
+    if (
+        contributor.get("actor") != binding["actor"]
+        or contributor.get("kind") != "agent"
+        or (
+            binding["token_env"] is not None
+            and contributor.get("authenticated") is not True
+        )
+    ):
+        raise core.HomeError(
+            f"Skillstore proposal {proposal_id} belongs to another contributor"
+        )
+    if result["status"] == "open":
+        listing = _command(binding, "inspect", name)
+        if listing.get("latest_reviewed") != base_version:
+            raise core.HomeError(
+                f"Skillstore proposal {proposal_id} uses an older base; adopt the latest reviewed version"
+            )
+        try:
+            decision = _command(
+                binding,
+                "decide",
+                proposal_id,
+                "accept",
+                "--version",
+                version,
+                "--note",
+                "Automatic approval from an opted-in Agent Home",
+                reviewer=True,
+            )
+        except core.HomeError as exc:
+            raise core.HomeError(
+                f"could not confirm approval of Skillstore proposal {proposal_id}: {exc}"
+            ) from None
+        result = decision["proposal"]
+        if result.get("id") != proposal_id or result.get("digest") != digest:
+            raise core.HomeError(
+                "Skillstore returned a different proposal after approval"
+            )
+    if result["status"] != "accepted":
+        raise core.HomeError(f"Skillstore proposal {proposal_id} is {result['status']}")
+    # The registry may already have recorded approval when an earlier reply was lost.
+    version = result["decision"]["released_version"]
+    release = _release(binding, name, version)
+    origin = release["provenance"]["origin"]
+    review = release["review"]
+    if (
+        release["status"] != "reviewed"
+        or release["digest"] != digest
+        or origin.get("proposal_id") != proposal_id
+        or origin.get("base_version") != base_version
+        or review.get("reviewer") != binding["reviewer"]["actor"]
+        or review.get("reviewer_kind") != "service"
+        or (
+            binding["token_env"] is not None and review.get("authenticated") is not True
+        )
+    ):
+        raise core.HomeError(
+            f"approved release for Skillstore proposal {proposal_id} could not be verified"
+        )
+    return version
+
+
+def _record_adoption(target, binding, updated, version, digest):
+    # Keep both versions so the active file hash determines which one is in
+    # use even if an interruption occurs between recording and publication.
+    binding["versions"][_sha(updated)] = {"version": version, "digest": digest}
+    _remember(target, binding)
+    target.publish(updated)
 
 
 def learn(home, name, proposal):
@@ -278,13 +406,21 @@ def learn(home, name, proposal):
         policy = target.manifest.get("learning")
         if not policy or policy["mode"] == "off":
             raise core.HomeError("enable a Home learning mode to use skill learn")
+        automatic = policy["mode"] == "auto"
+        if automatic and name not in policy["skills"]:
+            raise core.HomeError("skill is outside this Home's auto learning scope")
         updated, report = target.plan(proposal)
         binding = _binding(target)
+        if automatic and (binding is None or "reviewer" not in binding):
+            raise core.HomeError(
+                "bind the skill to a registry and a separate service reviewer for auto learning"
+            )
         if binding is None:
             return report
         if not binding["auto_submit"]:
             return {**report, "status": "registry-preview"}
         selected = _matched_version(target, binding)
+        version = _automatic_version(selected["version"]) if automatic else None
         with tempfile.TemporaryDirectory(prefix="soulsteads-skillstore-") as work:
             staged, text, release = _stage(
                 binding, name, selected["version"], Path(work) / "base"
@@ -321,8 +457,32 @@ def learn(home, name, proposal):
                     selected["version"],
                     f"--rationale={proposal['reason'].strip()}",
                 )
-            if result["digest"] != digest:
-                raise core.HomeError("Skillstore returned a different proposal digest")
+                if result["digest"] != digest:
+                    raise core.HomeError(
+                        "Skillstore returned a different proposal digest"
+                    )
+                if automatic:
+                    if (
+                        result.get("skill") != name
+                        or result.get("base_version") != selected["version"]
+                    ):
+                        raise core.HomeError(
+                            "Skillstore returned a proposal for a different base"
+                        )
+                    version = _approve_automatically(
+                        binding, name, result, selected["version"], version, digest
+                    )
+                    target.verify()
+                    _record_adoption(target, binding, updated, version, digest)
+                    return {
+                        **report,
+                        "status": "approved-and-adopted",
+                        "proposal_id": result["id"],
+                        "proposal_status": "accepted",
+                        "base_version": selected["version"],
+                        "version": version,
+                        "digest": digest,
+                    }
         return {
             **report,
             "status": "submitted" if prior is None else "already-submitted",
@@ -376,14 +536,7 @@ def adopt(home, name, version, *, apply=None):
                 )
             with publication.cooperative_lock(target.root_fd):
                 target.verify()
-                # Record both valid versions first. The active file hash selects
-                # the actual version even if publication is interrupted.
-                binding["versions"][_sha(updated)] = {
-                    "version": version,
-                    "digest": release["digest"],
-                }
-                _remember(target, binding)
-                target.publish(updated)
+                _record_adoption(target, binding, updated, version, release["digest"])
             report["status"] = "applied"
         return {
             **report,
