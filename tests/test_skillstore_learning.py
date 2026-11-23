@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from soulsteads import core, skillstore
 from soulsteads.native_config import sync
+from soulsteads.skill_review import Skill
 
 
 class SkillstoreLearningTests(unittest.TestCase):
@@ -85,17 +86,23 @@ class SkillstoreLearningTests(unittest.TestCase):
             remote.assert_not_called()
         self.assertEqual(self.skill.read_text(), changed)
 
-    def test_scoped_apply_rejects_unlisted_bound_skill_before_registry_access(self):
+    def test_scoped_apply_rejects_unlisted_bound_skill_before_planning(self):
         self.bind()
         sync(
             self.home, learning={"mode": "scoped-apply", "skills": ["skill-maintenance"]}
         )
         original = self.skill.read_bytes()
-        with patch.object(
-            skillstore, "_command", side_effect=AssertionError("registry called")
-        ) as remote:
+        with (
+            patch.object(
+                Skill, "plan", side_effect=AssertionError("proposal planned")
+            ) as plan,
+            patch.object(
+                skillstore, "_command", side_effect=AssertionError("registry called")
+            ) as remote,
+        ):
             with self.assertRaisesRegex(core.HomeError, "outside this Home"):
                 skillstore.learn(self.home, "starter", self.change)
+            plan.assert_not_called()
             remote.assert_not_called()
         self.assertEqual(self.skill.read_bytes(), original)
 

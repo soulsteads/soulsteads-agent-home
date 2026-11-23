@@ -180,8 +180,10 @@ Changes use the same [publication contract](publication-contract.md) as identity
 and memory configuration. Review the diff and start a fresh native session.
 
 The harness identifies opportunities for skill improvements during work.
-`soulsteads skill learn` enforces the auto scope and runs the configured
-Skillstore actions. Native permissions govern tool calls and direct file writes.
+In `scoped-apply` and `auto`, `soulsteads skill learn` rejects targets outside the
+Home's allowlist before planning a change or contacting Skillstore, even if the
+skill has a registry binding. Native permissions govern tool calls and direct
+file writes.
 Keep supporting scripts, identity, credentials, memory, and other runtime
 configuration under their separately configured workflows. The harness must be
 able to run the CLI and reach Skillstore from the session for unattended learning.
