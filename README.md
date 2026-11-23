@@ -127,6 +127,19 @@ never launches an agent and does not establish that migration is activation-read
 
 ---
 
+## Import from OpenClaw
+
+Inspect one explicitly selected workspace, then repeat with `--apply` after review:
+
+```sh
+soulsteads import-openclaw helper --workspace /path/to/openclaw-workspace \
+  --runtime opencode --path "$HOME/agents/helper"
+```
+
+Use `--skill NAME` for each portable local skill and `--include-memory` for
+curated `MEMORY.md`. Sessions, credentials, gateway settings, and live integrations
+stay with OpenClaw. See the [OpenClaw import guide](docs/openclaw-import.md).
+
 ## Configure and launch
 
 ```sh
@@ -253,6 +266,10 @@ output, transcript files and Git history, bounds requests, and lets the task
 continue when memory is unavailable. Retention temporarily stores pending prompts
 in private, ignored `.runtime/hindsight/` files. Start fresh sessions after changes.
 
+Use `soulsteads config helper --hindsight-status` to inspect effective callback
+limits without printing the endpoint or credential. Set individual limits with
+`--hindsight-policy-json`; this does not enable automatic recall or retention.
+
 Remove owned project entries and disable callbacks with
 `soulsteads config helper --no-hindsight`; bank data and global servers remain
 untouched. For Codex 0.169.0 only, native retain/direct readback, useful fresh-session
@@ -284,6 +301,11 @@ The optional `skill-maintenance` starter separates facts/preferences, reusable
 procedures, and temporary handoffs. `--no-skills` omits both starter skills without
 changing the selected learning mode. See [learning configuration](docs/runtimes.md#learning-configuration)
 for refresh, scope, and qualification details.
+
+Use `soulsteads skill propose`, `show`, `apply`, and `undo` to
+[review one skill change](docs/skill-review.md) without writing it into the
+active skill tree until you approve the exact draft. These commands do not
+stage or commit the change.
 
 ### Inspect adapter capabilities
 

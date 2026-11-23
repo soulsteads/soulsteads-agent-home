@@ -1,6 +1,7 @@
 """Opt-in native lifecycle wiring for bounded Hindsight memory operations."""
 
 import json
+import os
 
 from .runtimes import RUNTIMES
 
@@ -8,6 +9,56 @@ PLUGIN_PATHS = {
     "opencode": ".opencode/plugins/soulsteads-memory.js",
     "pi": ".pi/extensions/soulsteads-memory.ts",
 }
+
+CALLBACK_DEFAULTS = {
+    "recall_budget": "low",
+    "recall_max_tokens": 1000,
+    "recall_context_chars": 6000,
+    "turn_text_bytes": 32768,
+    "request_timeout_seconds": 3,
+    "callback_deadline_seconds": 8,
+}
+_INT_RANGES = {
+    "recall_max_tokens": (1, 4000),
+    "recall_context_chars": (256, 6000),
+    "turn_text_bytes": (1, 32768),
+    "request_timeout_seconds": (1, 3),
+    "callback_deadline_seconds": (1, 8),
+}
+
+
+def effective_policy(overrides):
+    """Resolve validated callback limits without enabling either operation."""
+    if not isinstance(overrides, dict) or overrides.keys() - CALLBACK_DEFAULTS.keys():
+        raise ValueError("Hindsight callback policy must be an object of known options")
+    policy = {**CALLBACK_DEFAULTS, **overrides}
+    if policy["recall_budget"] not in ("low", "mid", "high"):
+        raise ValueError("Hindsight recall_budget must be low, mid, or high")
+    for key, (lower, upper) in _INT_RANGES.items():
+        value = policy[key]
+        if type(value) is not int or not lower <= value <= upper:
+            raise ValueError(f"Hindsight {key} must be an integer from {lower} to {upper}")
+    return policy
+
+
+def settings_report(manifest):
+    """Describe saved Home policy, not live connectivity or tool permissions."""
+    from .native_config import validate_hindsight
+
+    settings = manifest.get("hindsight")
+    validate_hindsight(settings)
+    flags = manifest.get("hindsight_automation")
+    validate(flags, settings)
+    return {
+        "runtime": manifest["runtime"],
+        "mcp_configured": settings is not None,
+        "credential_present": bool(settings and os.environ.get(settings["token_env"])),
+        "automatic_callbacks": flags or {"recall": False, "retain": False},
+        "callback_limits": effective_policy(manifest.get("hindsight_policy", {})),
+        "scope": "Home-root callbacks; OpenCode v1 only for OpenCode",
+        "mcp_permissions_verified": False,
+        "connection_verified": False,
+    }
 
 
 def validate(value, hindsight):

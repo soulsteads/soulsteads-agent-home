@@ -776,6 +776,7 @@ def sync(
     retain=UNSET,
     shared_settings=UNSET,
     selected_only=False,
+    hindsight_policy=UNSET,
 ):
     """Refresh native projections through the cooperative publication lock."""
     from . import publication
@@ -795,6 +796,7 @@ def sync(
                 automation=automation,
                 recall=recall,
                 retain=retain,
+                hindsight_policy=hindsight_policy,
                 shared_settings=shared_settings,
                 selected_only=selected_only,
                 root_fd=root_fd,
@@ -817,6 +819,7 @@ def _sync_locked(
     selected_only=False,
     root_fd=None,
     root_chain=None,
+    hindsight_policy=UNSET,
 ):
     """Plan and publish native projections while caller holds home lock."""
     from . import publication
@@ -841,6 +844,15 @@ def _sync_locked(
             manifest["runtime"] = runtime
         if shared_settings is not UNSET:
             manifest["shared_settings"] = shared_settings
+        if hindsight_policy is not UNSET:
+            from .memory_automation import effective_policy
+
+            if not isinstance(hindsight_policy, dict):
+                raise ValueError("Hindsight callback policy must be a JSON object")
+            overrides = {**manifest.get("hindsight_policy", {}), **hindsight_policy}
+            effective_policy(overrides)
+            if overrides:
+                manifest["hindsight_policy"] = overrides
         if recall is not UNSET or retain is not UNSET:
             if automation is not UNSET:
                 raise core.HomeError(

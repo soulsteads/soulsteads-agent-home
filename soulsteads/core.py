@@ -186,9 +186,10 @@ def _validate_home(
     from .learning import validate as validate_learning
 
     validate_learning(value.get("learning"))
-    from .memory_automation import validate as validate_automation
+    from .memory_automation import effective_policy, validate as validate_automation
 
     validate_automation(value.get("hindsight_automation"), value.get("hindsight"))
+    effective_policy(value.get("hindsight_policy", {}))
     return value
 
 

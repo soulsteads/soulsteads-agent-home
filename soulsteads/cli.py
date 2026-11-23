@@ -92,6 +92,24 @@ def parser():
         action="store_true",
         help="Create a new home; default is inspection only",
     )
+    claw = commands.add_parser(
+        "import-openclaw", help="Inspect or import an explicit OpenClaw workspace"
+    )
+    claw.add_argument("name")
+    claw.add_argument("--workspace", type=Path, required=True)
+    claw.add_argument("--runtime", required=True, choices=RUNTIMES)
+    claw.add_argument("--path", type=Path)
+    claw.add_argument(
+        "--include-memory", action="store_true",
+        help="Copy curated MEMORY.md into the private Git-backed Home",
+    )
+    claw.add_argument(
+        "--skill", action="append", default=[],
+        help="Select a portable skill by directory name; repeat as needed",
+    )
+    claw.add_argument(
+        "--apply", action="store_true", help="Create a new Home; otherwise inspect only"
+    )
     verify = commands.add_parser(
         "verify", help="Check a Home offline without launching its runtime"
     )
@@ -139,6 +157,14 @@ def parser():
     config.add_argument(
         "--hindsight-token-env",
         help="Credential environment-variable name, never its value (default: HINDSIGHT_API_TOKEN)",
+    )
+    config.add_argument(
+        "--hindsight-policy-json",
+        help="Update selected Home callback limits with a JSON object",
+    )
+    config.add_argument(
+        "--hindsight-status", action="store_true",
+        help="Report effective Hindsight policy offline without printing the endpoint or credential",
     )
     for operation in ("recall", "retain"):
         config.add_argument(
@@ -207,6 +233,19 @@ def parser():
     adopt.add_argument("name")
     adopt.add_argument("version")
     adopt.add_argument("--apply", metavar="REVIEW_ID")
+    propose = skills.add_parser("propose", help="Draft a change to one existing skill")
+    propose.add_argument("agent")
+    propose.add_argument("name")
+    propose.add_argument("candidate", type=Path)
+    propose.add_argument("--reason", required=True)
+    for action, summary in (
+        ("show", "Read a private draft and its diff"),
+        ("apply", "Approve and apply the exact draft if its base is still current"),
+        ("undo", "Restore the prior skill body if the applied bytes are still current"),
+    ):
+        command = skills.add_parser(action, help=summary)
+        command.add_argument("agent")
+        command.add_argument("draft_id")
     run = commands.add_parser(
         "run", help="Launch the selected runtime from its agent home"
     )
@@ -561,6 +600,18 @@ def main(argv=None):
                     args.name, args.source, args.profile, args.runtime, **options
                 )
             print(json.dumps(report, indent=2))
+        elif args.command == "import-openclaw":
+            from .openclaw_import import import_workspace, inspect_workspace
+
+            selection = (args.name, args.workspace, args.runtime)
+            options = {"include_memory": args.include_memory, "skills": args.skill}
+            if args.apply:
+                report = import_workspace(
+                    *selection, path=args.path, base=args.agents_dir, **options
+                )
+            else:
+                report = inspect_workspace(*selection, **options)
+            print(json.dumps(report, indent=2))
         elif args.command == "memory-hook":
             from .memory_hooks import main as memory_hook
 
@@ -603,6 +654,7 @@ def main(argv=None):
                 or args.learning_skill
                 or args.hindsight_recall is not None
                 or args.hindsight_retain is not None
+                or args.hindsight_policy_json is not None
             ):
                 from .native_config import UNSET, sync
 
@@ -632,10 +684,20 @@ def main(argv=None):
                     retain=args.hindsight_retain
                     if args.hindsight_retain is not None
                     else UNSET,
+                    hindsight_policy=_settings_json(
+                        args.hindsight_policy_json, "Hindsight policy"
+                    )
+                    if args.hindsight_policy_json is not None
+                    else UNSET,
                 )
             elif args.runtime:
                 core.configure(home, args.runtime)
-            print(json.dumps(core.load(home), indent=2))
+            manifest = core.load(home)
+            if args.hindsight_status or args.hindsight_policy_json is not None:
+                from .memory_automation import settings_report
+
+                manifest = settings_report(manifest)
+            print(json.dumps(manifest, indent=2))
         elif args.command == "commit":
             print(core.commit(agent_path(args.agent, args.agents_dir), args.message))
         elif args.command == "revert":
@@ -754,11 +816,23 @@ def main(argv=None):
                 report = skillstore.adopt(home, args.name, args.version, apply=args.apply)
             print(json.dumps(report, indent=2))
         elif args.command == "skill":
-            print(
-                core.install_skill(
-                    agent_path(args.agent, args.agents_dir), args.source.expanduser()
-                )
-            )
+            home = agent_path(args.agent, args.agents_dir)
+            if args.skill_command == "install":
+                print(core.install_skill(home, args.source.expanduser()))
+            else:
+                from . import skill_drafts
+
+                if args.skill_command == "propose":
+                    draft = skill_drafts.propose(
+                        home, args.name, args.candidate, args.reason
+                    )
+                elif args.skill_command == "show":
+                    draft = skill_drafts.show(home, args.draft_id)
+                elif args.skill_command == "apply":
+                    draft = skill_drafts.apply(home, args.draft_id)
+                else:
+                    draft = skill_drafts.undo(home, args.draft_id)
+                print(json.dumps(draft, indent=2))
         elif args.command == "log":
             print(core.history(agent_path(args.agent, args.agents_dir)), end="")
         return 0

@@ -548,14 +548,21 @@ def import_profile(
     allow_partial=False,
     **options,
 ):
+    return _apply_import(
+        name, runtime, "hermes", lambda: _plan(name, source, profile, runtime, **options),
+        path=path, base=base, allow_partial=allow_partial, source_root=source,
+    )
+
+
+def _apply_import(name, runtime, kind, plan, *, path, base, allow_partial, source_root):
+    """Publish a new Home from an admitted local importer plan."""
+    source_label = {"hermes": "Hermes", "openclaw": "OpenClaw"}[kind]
     stage = None
     parent_fd = None
     published = False
     stage_identity = None
     try:
-        snap, selected, workspace, documents, skills, private, report = _plan(
-            name, source, profile, runtime, **options
-        )
+        snap, selected, workspace, documents, skills, private, report = plan()
         if report["unsupported"] and not allow_partial:
             raise ImportErrorSafe(
                 "manual configuration required; inspect first, then acknowledge with --allow-partial"
@@ -568,7 +575,7 @@ def import_profile(
             )
             / name
         )
-        for root in (_absolute(source), selected, workspace):
+        for root in (_absolute(source_root), selected, workspace):
             if root and (
                 target == root or root in target.parents or target in root.parents
             ):
@@ -577,7 +584,7 @@ def import_profile(
             raise ImportErrorSafe("destination already exists")
         core._check_not_nested_git(target.parent)
         parent_fd, chain = _mkdir_parent(target.parent)
-        stage = ".hermes-import-" + secrets.token_hex(16)
+        stage = f".{kind}-import-" + secrets.token_hex(16)
         os.mkdir(stage, mode=0o700, dir_fd=parent_fd)
         info = os.stat(stage, dir_fd=parent_fd, follow_symlinks=False)
         stage_identity = (info.st_dev, info.st_ino)
@@ -594,7 +601,7 @@ def import_profile(
             # Preserve source bytes exactly except for the explicitly wrapped AGENTS.md.
             (home / filename).write_bytes(content.encode("utf-8"))
             (home / filename).chmod(0o600)
-        if skills:
+        if skills and kind == "hermes":
             instructions = home / "AGENTS.md"
             instructions.write_text(
                 instructions.read_text(encoding="utf-8")
@@ -619,7 +626,7 @@ def import_profile(
             with destination.open("xb") as stream:
                 os.fchmod(stream.fileno(), mode)
                 stream.write(raw)
-        private_root = home / ".runtime" / "hermes"
+        private_root = home / ".runtime" / kind
         (home / ".runtime").mkdir(mode=0o700)
         private_root.mkdir(mode=0o700)
         for filename, raw in private.items():
@@ -642,7 +649,7 @@ def import_profile(
 
         sync(home)
         if core._git(home, "status", "--porcelain").stdout:
-            core.commit(home, "Import Hermes agent definition")
+            core.commit(home, f"Import {source_label} agent definition")
         snap.verify()
         fresh, current = _open_dir(target.parent)
         try:
@@ -685,7 +692,7 @@ def import_profile(
                 "import was published but final verification failed; inspect destination before retrying"
             ) from None
         raise ImportErrorSafe(
-            "cannot safely import Hermes source; details suppressed"
+            f"cannot safely import {source_label} source; details suppressed"
         ) from None
     finally:
         if parent_fd is not None:
