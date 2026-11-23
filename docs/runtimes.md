@@ -329,6 +329,29 @@ its own setting under the cooperative configuration lock. `--no-hindsight` also
 disables both operations. Configuration stays offline and uses the existing
 checked publisher, ownership/conflict rules, and canonical Git lifecycle.
 
+Inspect the saved policy and effective defaults without printing the endpoint,
+bank name, or credential:
+
+```sh
+soulsteads config helper --hindsight-status
+soulsteads config helper --hindsight-policy-json '{"recall_budget":"mid","recall_max_tokens":800}'
+```
+
+Each update merges only the specified keys into `hindsight_policy` in the Home
+manifest. It does not enable either callback or change native MCP permissions.
+Supported options are:
+
+- `recall_budget`: `low` (default), `mid`, or `high`.
+- `recall_max_tokens`: 1–4,000 tokens (default 1,000).
+- `recall_context_chars`: 256–6,000 characters (default 6,000), including the reference wrapper.
+- `turn_text_bytes`: 1–32,768 UTF-8 bytes per speaker (default 32,768).
+- `request_timeout_seconds`: 1–3 seconds (default 3), for each HTTP request.
+- `callback_deadline_seconds`: 1–8 seconds (default 8), checked during the MCP exchange; the native adapter's outer timeout is unchanged.
+
+These are Home callback limits, not Hindsight server settings or limits on
+explicit native MCP calls. Status reports whether the credential is present in
+the current CLI environment; it does not test the service or native approval.
+
 The native adapters check recall and retention separately. Recall-only sessions
 do not cache completed replies, fetch session messages for retention, or invoke
 retain callbacks. Retention-only sessions still capture the prompt but do not
@@ -370,15 +393,15 @@ flows. Only **Home-root sessions** are supported for automatic memory. Pi's sepa
 project selector does not forward the Home extension or MCP connection.
 
 Recall sends the captured prompt to the configured per-bank MCP `recall` tool
-with low search budget and a 1,000-token request budget. Returned reference text is
-bounded to 6,000 characters and explicitly marked as untrusted data. Command hooks
+using the Home's search and token budgets. Returned reference text is bounded by
+the context limit and explicitly marked as untrusted data. Command hooks
 return native `additionalContext`; Pi adds a hidden native custom message, and
 OpenCode appends to the existing system context. No built-in prompt is replaced.
 
 Retention captures a prompt only when enabled, then submits it and a completed
 assistant reply to the same bank's `retain` tool. It never opens `transcript_path`,
-reads Git history, or sends tool/reasoning/image attachments. Text is bounded to
-32 KiB per speaker; oversized or missing text is skipped. Native template/skill
+reads Git history, or sends tool/reasoning/image attachments. Text is bounded by
+the per-speaker byte limit; oversized or missing text is skipped. Native template/skill
 expansion can be part of the captured prompt, and secrets typed into ordinary text
 are not filtered. This opt-in authorizes that prompt/reply transfer, independently
 of the learning mode. Hook network calls use the environment credential directly;

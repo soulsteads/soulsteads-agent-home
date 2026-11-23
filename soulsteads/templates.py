@@ -83,6 +83,9 @@ mode below. Resolve targets against the Home even when working in another projec
 
 Authorization to finish the task is not blanket authority to edit durable guidance.
 If mode or scope is unclear, use propose mode. Never infer approval from silence.
+When authorized to save a local draft, use `soulsteads skill propose` with a
+private candidate file and use `soulsteads skill show` to inspect the saved diff.
+Saving a draft does not authorize `soulsteads skill apply`.
 
 ## Keep learning in the right place
 

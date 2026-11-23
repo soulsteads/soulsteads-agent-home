@@ -67,11 +67,12 @@ def verify_home(home, probe_versions=False):
         learning = manifest.get("learning")
         validate_learning(learning)
         validate_hindsight(manifest.get("hindsight"))
-        from .memory_automation import enabled
+        from .memory_automation import effective_policy, enabled
         from .memory_automation import validate as validate_automation
 
         automation = manifest.get("hindsight_automation")
         validate_automation(automation, manifest.get("hindsight"))
+        effective_policy(manifest.get("hindsight_policy", {}))
         for filename in core._PERSONA_FILES:
             raw = snap.read(home / filename)
             if raw is None:

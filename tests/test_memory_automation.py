@@ -167,6 +167,22 @@ class MemoryAutomationTests(unittest.TestCase):
         self.assertIn("untrusted", result)
         json.loads(result.split("\n", 1)[1])
 
+    def test_custom_callback_limits_reach_recall_and_bound_retain(self):
+        self.configure()
+        sync(self.home, hindsight_policy={"recall_budget": "mid", "recall_max_tokens": 800,
+                                         "recall_context_chars": 256, "turn_text_bytes": 32})
+        result = memory_hooks.run(self.payload(prompt="question"), "pi", "prompt")
+        self.assertLessEqual(len(result["additional_context"]), 256)
+        self.assertEqual(self.tools(), [{"name": "recall", "arguments": {
+            "query": "question", "budget": "mid", "max_tokens": 800,
+        }}])
+        memory_hooks.run(self.payload(last_assistant_message="é" * 17), "pi", "retain")
+        self.assertEqual(len(self.tools()), 1)
+        memory_hooks.run(self.payload(last_assistant_message="eligible reply"), "pi", "retain")
+        self.assertEqual(self.tools()[-1]["name"], "retain")
+        self.assertEqual(self.tools()[-1]["arguments"]["content"],
+                         "User:\nquestion\n\nAssistant:\neligible reply")
+
     def test_cli_requires_a_bank_then_compiles_all_native_adapters_offline(self):
         before = self.snapshot()
         code, _, _ = self.invoke("config", str(self.home), "--hindsight-recall")
