@@ -72,3 +72,29 @@ Installing the CLI does not migrate a live Home.
 A partial-publication error is not a rollback. Inspect applied and remaining
 paths before retrying. The publication lock is not a lock for arbitrary
 editors or all Git and native processes.
+
+## Reviewed skill edits in external harnesses
+
+A Linux rehearsal used a disposable Home with learning set to `propose` and a
+synthetic skill containing a unique shipment code. Pi 1.6.0 read the original
+code in a model turn. The installed Home CLI previewed and applied one change.
+A fresh Codex 0.171.0 session returned the revised code with a local model.
+A separate Codex session ran `soulsteads skill review .` with the skill name
+inside its read-only sandbox and returned the same review ID as an independent
+operator preview. The second proposal left the skill untouched.
+
+On OpenCode 2.4.0 and Claude Code 2.1.330, live requests to a loopback model
+included the Home learning policy and the revised skill body when the skill
+file was explicitly supplied. This exercises explicit file selection. Automatic
+skill selection and reliable model-led approval are separate behaviors. In a
+separate command-recall turn, the small local model suggested an invalid
+`--review-id` option. Preview takes no ID; only apply takes `--apply REVIEW_ID`.
+
+To repeat the check, install the candidate CLI, create a disposable Home and
+install a synthetic skill with a unique response in its body. Ask Pi for the
+response using `/skill:NAME`. Follow the [skill review example](runtimes.md#review-one-skill-change-across-harnesses)
+to change it, then ask a fresh harness for the response without putting the
+answer in the question. For a read-only sandbox, start in the Home root and
+use `.` as the Home argument. Compare an in-session preview with the same JSON
+run by the operator. Supply a separate model endpoint or normal harness account
+for each live test.

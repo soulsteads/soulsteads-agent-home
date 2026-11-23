@@ -32,6 +32,7 @@ your chosen harness owns execution, sessions, tools, and permissions.
 
 - **Your files, on your machine.** Plain Markdown and local configuration, not a hosted account.
 - **Choose your runtime.** OpenCode, pi, Claude Code, or Codex. Install and authenticate it separately.
+- **Carry a correction between agents.** [Preview and apply a reviewed skill edit](docs/runtimes.md#review-one-skill-change-across-harnesses), then use it in a fresh session with another harness.
 - **Keep a history.** Commit changes and restore earlier tracked contents without rewriting history.
 - **Start small.** Python 3.11+ and Git; ordinary CLI commands have no runtime Python dependencies.
 - **Bring selected Hermes files.** Inspect a profile before importing with the optional `hermes` extra.

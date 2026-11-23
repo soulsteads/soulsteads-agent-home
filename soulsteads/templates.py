@@ -117,6 +117,17 @@ memory category and the reusable procedure stays in its skill; test fixtures are
 deterministic examples, not evidence of model behavior. Read back authorized
 changes and report their scope, validation, limits, and any unresolved uncertainty.
 
+For a correction to an existing Home skill, use the Home CLI if available:
+
+1. Run `soulsteads skill review HOME SKILL` with JSON on stdin. Set `reason` to
+   the evidence for the edit, `before` to an exact unique passage in the skill
+   body, and `after` to its replacement. From the Home root use `.` for HOME.
+2. Show the returned diff. Apply only with authority for that exact change by
+   repeating the proposal with `--apply REVIEW_ID`. If the review ID is stale,
+   preview the current change and obtain any required approval again.
+3. Start a fresh native session to check the revised procedure. An edit does
+   not authorize a Git commit or installation in another Home.
+
 For rollback, propose the smallest inverse diff from the preserved before-state.
 Apply it only with authority for that target. If using Git, create a new reviewed
 commit when separately authorized; never reset history or undo unrelated work.

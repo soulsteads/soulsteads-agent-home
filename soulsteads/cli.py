@@ -167,12 +167,20 @@ def parser():
     revert.add_argument("agent")
     revert.add_argument("revision")
     skill = commands.add_parser(
-        "skill", help="Install an inspected local skill directory"
+        "skill", help="Install or review changes to local skills"
     )
     skills = skill.add_subparsers(dest="skill_command", required=True)
     install = skills.add_parser("install")
     install.add_argument("agent")
     install.add_argument("source", type=Path)
+    review = skills.add_parser(
+        "review", help="Preview a skill body edit from JSON on stdin"
+    )
+    review.add_argument("agent")
+    review.add_argument("name", help="Existing local skill name")
+    review.add_argument(
+        "--apply", metavar="REVIEW_ID", help="Apply the exact reviewed proposal"
+    )
     run = commands.add_parser(
         "run", help="Launch the selected runtime from its agent home"
     )
@@ -674,6 +682,18 @@ def main(argv=None):
                 close = getattr(launch, "close", None)
                 if close is not None:
                     close()
+        elif args.command == "skill" and args.skill_command == "review":
+            from .skill_review import MAX_PROPOSAL_BYTES, review
+
+            raw = sys.stdin.buffer.read(MAX_PROPOSAL_BYTES + 1)
+            if len(raw) > MAX_PROPOSAL_BYTES:
+                raise ValueError("skill proposal exceeds 64 KiB")
+            proposal = _settings_json(raw.decode("utf-8"), "skill proposal")
+            report = review(
+                agent_path(args.agent, args.agents_dir), args.name, proposal,
+                apply=args.apply,
+            )
+            print(json.dumps(report, indent=2))
         elif args.command == "skill":
             print(
                 core.install_skill(
