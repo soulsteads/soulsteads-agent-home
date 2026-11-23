@@ -345,8 +345,12 @@ Supported options are:
 - `recall_max_tokens`: 1–4,000 tokens (default 1,000).
 - `recall_context_chars`: 256–6,000 characters (default 6,000), including the reference wrapper.
 - `turn_text_bytes`: 1–32,768 UTF-8 bytes per speaker (default 32,768).
-- `request_timeout_seconds`: 1–3 seconds (default 3), for each HTTP request.
-- `callback_deadline_seconds`: 1–8 seconds (default 8), checked during the MCP exchange; the native adapter's outer timeout is unchanged.
+- `request_timeout_seconds`: 1–3 seconds (default 3) for socket operations,
+  capped by the remaining callback budget when each HTTP request starts.
+- `callback_deadline_seconds`: 1–8 seconds (default 8) for the whole MCP
+  exchange. Responses at or after the deadline are discarded, but this is a
+  soft limit on how long the callback runs: an in-progress HTTP operation can
+  return late. The native adapter's outer timeout is unchanged.
 
 These are Home callback limits, not Hindsight server settings or limits on
 explicit native MCP calls. Status reports whether the credential is present in
