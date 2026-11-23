@@ -406,9 +406,10 @@ def learn(home, name, proposal):
         policy = target.manifest.get("learning")
         if not policy or policy["mode"] == "off":
             raise core.HomeError("enable a Home learning mode to use skill learn")
-        automatic = policy["mode"] == "auto"
-        if automatic and name not in policy["skills"]:
-            raise core.HomeError("skill is outside this Home's auto learning scope")
+        mode = policy["mode"]
+        if mode in {"scoped-apply", "auto"} and name not in policy["skills"]:
+            raise core.HomeError("skill is outside this Home's learning scope")
+        automatic = mode == "auto"
         updated, report = target.plan(proposal)
         binding = _binding(target)
         if automatic and (binding is None or "reviewer" not in binding):
