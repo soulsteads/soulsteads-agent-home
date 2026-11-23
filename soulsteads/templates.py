@@ -119,12 +119,17 @@ changes and report their scope, validation, limits, and any unresolved uncertain
 
 For a correction to an existing Home skill, use the Home CLI if available:
 
-1. Run `soulsteads skill review HOME SKILL` with JSON on stdin. Set `reason` to
+1. With an explicit enabled learning policy, run `soulsteads skill learn HOME SKILL`
+   with JSON on stdin. With legacy guidance, use `soulsteads skill review HOME SKILL`.
+   Set `reason` to
    the evidence for the edit, `before` to an exact unique passage in the skill
    body, and `after` to its replacement. From the Home root use `.` for HOME.
-2. Show the returned diff. Apply only with authority for that exact change by
-   repeating the proposal with `--apply REVIEW_ID`. If the review ID is stale,
-   preview the current change and obtain any required approval again.
+2. If the result includes a Skillstore proposal ID, report it and leave the active
+   skill for review and adoption. For a registry preview, show the diff and leave
+   the bound skill awaiting review. If the result is a local preview, show its diff.
+   Apply with authority for the exact local change by repeating the proposal with
+   `soulsteads skill review HOME SKILL --apply REVIEW_ID`. If the ID is stale,
+   refresh the preview and obtain any required approval again.
 3. Start a fresh native session to check the revised procedure. An edit does
    not authorize a Git commit or installation in another Home.
 

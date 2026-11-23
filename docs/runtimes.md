@@ -747,3 +747,58 @@ it before applying. Use the normal Home commit command when you want a revision.
 External editors must be quiescent during apply, as for native configuration
 publication. A fresh harness session can load the updated canonical skill through
 its native discovery path.
+
+## Send learning proposals to Skillstore
+
+Install the [Skillstore CLI](https://github.com/soulsteads/soulsteads-agent-skillstore#install-from-source)
+on the harness's PATH. Start with an existing skill whose `SKILL.md` matches
+an exact reviewed version. For a shared registry, provision an agent
+contributor token separately from the reviewer's token. Set the contributor
+token variable through the harness's normal environment configuration.
+
+```sh
+soulsteads config . --learning propose
+soulsteads skill bind . shipping --store https://skills.example.net \
+  --version 1.0.0 --actor shipping-agent --token-env SHIPPING_SKILLSTORE_TOKEN
+```
+
+Use an absolute store directory outside the Home for a local registry and omit
+`--token-env`. Remote registries use HTTPS or loopback HTTP. Bindings live under
+the Home's private `.runtime/` directory and store the token variable name.
+
+In a fresh session, the native learning guidance tells the harness to call
+`soulsteads skill learn . shipping` with the same JSON fields as `skill review`.
+With learning enabled and an active binding, Home stages the approved registry
+package, verifies the local skill body against its recorded version, and
+submits the correction as a pending proposal. Supporting files come from the
+reviewed registry package. Keep the proposed text and reason suitable for
+sharing with the configured registry.
+
+The command reports the proposal ID. A repeat from the same Home checks for
+an existing proposal with the same base and content before submitting. For an
+unbound skill, the command returns a local preview. Native shell and network
+permissions govern whether the harness can run the command and reach the store.
+
+- Use `soulsteads config . --learning off` to turn off learning for all skills
+  in the Home.
+- Repeat the binding with `--no-auto-submit` to keep adoption and preview
+  available while disabling automatic submissions for that skill.
+- Use `soulsteads skill bind . shipping --off` to return that skill to local
+  review.
+
+A Skillstore reviewer can inspect and decide the proposal from the registry CLI
+or through a configured
+Telegram inbox in Agent Messaging. See `docs/SKILL-REVIEWS.md` in that project.
+After acceptance, preview and adopt that exact version:
+
+```sh
+soulsteads skill adopt . shipping 1.1.0
+soulsteads skill adopt . shipping 1.1.0 --apply REVIEW_ID
+```
+
+Adoption updates the canonical `SKILL.md` in the selected Home and records the
+version and digest. It checks for local changes to that file, preserves
+frontmatter, and requires a release that differs only in `SKILL.md`.
+To undo an adoption, preview and adopt the earlier reviewed version using
+the same commands. This restores just the skill body. Start a fresh harness
+session to load the adopted version.
