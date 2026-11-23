@@ -58,7 +58,7 @@ def render(value):
         if value["mode"] == "propose":
             text += (
                 "Show the target, reason and smallest proposed diff. Do not persist "
-                "a learning change without explicit user authorization.\n"
+                "a local skill edit without explicit user authorization.\n"
             )
         else:
             text += (
@@ -72,14 +72,19 @@ def render(value):
                 "Validate each applied correction and report its diff and evidence.\n"
             )
         text += (
-            "For a correction to an existing skill body, preview it with "
-            "`soulsteads skill review HOME SKILL` using the selected Home path and "
+            "For a correction to an existing skill body, use "
+            "`soulsteads skill learn HOME SKILL` with the selected Home path and "
             "JSON on stdin with reason, before (unique existing body text), and after. "
             "When already in the Home root, pass . as HOME. "
-            "Show the diff and review_id. Only with authority for that exact edit, "
-            "repeat the same input with `--apply REVIEW_ID`. A review ID identifies "
-            "the edit and does not confer approval. Prefer stdin over a proposal file "
-            "when the user has authorized preview only.\n"
+            "The command automatically sends a pending proposal for a Skillstore-bound "
+            "skill when its binding enables submission. Keep the reason and replacement free of private task data. "
+            "Report the proposal ID and leave the active skill awaiting review and adoption, "
+            "including in scoped-apply mode. For a registry-preview result, show the diff "
+            "and leave the bound skill awaiting a reviewer. After a submission error, report it without "
+            "applying the same correction locally. An unbound skill returns a local preview. "
+            "Use `soulsteads skill review HOME SKILL` for local review only. Show the diff and "
+            "review_id. With authority for the exact local edit, repeat the same review input "
+            "with `--apply REVIEW_ID`. A review ID identifies the edit and does not confer approval.\n"
         )
     return text + (
         "\nFacts and preferences belong in separately authorized curated memory or "
@@ -88,7 +93,8 @@ def render(value):
         "Hindsight retention. Never create a competing local copy of service-owned memory.\n"
         "Learning does not authorize changes to SOUL.md, USER.md, AGENTS.md, "
         "this policy, runtime configuration, permissions, credentials, plugins or schedules. "
-        "It does not authorize installation, commits, publication or external actions. "
+        "It does not authorize installation, commits or release publication. The enabled "
+        "Skillstore submission, when enabled, is the external action this policy authorizes. "
         "Native tools and approvals remain authoritative; these are model-followed "
         "instructions, not a sandbox or a background learner.\n"
     )

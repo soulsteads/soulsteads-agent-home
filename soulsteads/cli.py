@@ -181,6 +181,24 @@ def parser():
     review.add_argument(
         "--apply", metavar="REVIEW_ID", help="Apply the exact reviewed proposal"
     )
+    learn = skills.add_parser("learn", help="Submit a bound skill correction or preview a local correction")
+    learn.add_argument("agent")
+    learn.add_argument("name")
+    bind = skills.add_parser("bind", help="Configure where learning proposals for a skill go")
+    bind.add_argument("agent")
+    bind.add_argument("name")
+    binding = bind.add_mutually_exclusive_group(required=True)
+    binding.add_argument("--store", help="Absolute Skillstore path or registry URL")
+    binding.add_argument("--off", action="store_true", help="Disable this skill's registry binding")
+    bind.add_argument("--version")
+    bind.add_argument("--actor")
+    bind.add_argument("--token-env")
+    bind.add_argument("--no-auto-submit", action="store_true", help="Bind for adoption and local preview only")
+    adopt = skills.add_parser("adopt", help="Preview or adopt an exact reviewed Skillstore version")
+    adopt.add_argument("agent")
+    adopt.add_argument("name")
+    adopt.add_argument("version")
+    adopt.add_argument("--apply", metavar="REVIEW_ID")
     run = commands.add_parser(
         "run", help="Launch the selected runtime from its agent home"
     )
@@ -682,17 +700,36 @@ def main(argv=None):
                 close = getattr(launch, "close", None)
                 if close is not None:
                     close()
-        elif args.command == "skill" and args.skill_command == "review":
+        elif args.command == "skill" and args.skill_command in {"review", "learn"}:
             from .skill_review import MAX_PROPOSAL_BYTES, review
 
             raw = sys.stdin.buffer.read(MAX_PROPOSAL_BYTES + 1)
             if len(raw) > MAX_PROPOSAL_BYTES:
                 raise ValueError("skill proposal exceeds 64 KiB")
             proposal = _settings_json(raw.decode("utf-8"), "skill proposal")
-            report = review(
-                agent_path(args.agent, args.agents_dir), args.name, proposal,
-                apply=args.apply,
-            )
+            home = agent_path(args.agent, args.agents_dir)
+            if args.skill_command == "learn":
+                from .skillstore import learn
+
+                report = learn(home, args.name, proposal)
+            else:
+                report = review(home, args.name, proposal, apply=args.apply)
+            print(json.dumps(report, indent=2))
+        elif args.command == "skill" and args.skill_command in {"bind", "adopt"}:
+            from . import skillstore
+
+            home = agent_path(args.agent, args.agents_dir)
+            if args.skill_command == "bind":
+                if args.off and (args.version or args.actor or args.token_env or args.no_auto_submit):
+                    raise ValueError("--off takes no version, actor or token")
+                if not args.off and not (args.version and args.actor):
+                    raise ValueError("--store requires --version and --actor")
+                report = skillstore.bind(
+                    home, args.name, args.version, store=args.store, actor=args.actor,
+                    token_env=args.token_env, auto_submit=not args.no_auto_submit,
+                )
+            else:
+                report = skillstore.adopt(home, args.name, args.version, apply=args.apply)
             print(json.dumps(report, indent=2))
         elif args.command == "skill":
             print(

@@ -5,7 +5,8 @@ import hashlib
 import json
 import os
 import re
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import core, native_config, publication
@@ -23,17 +24,11 @@ def _plan(original, relative, proposal, home_identity, policy):
     if not reason.strip() or not before.strip() or before == after:
         raise ValueError("provide a reason and a distinct change to existing body text")
 
-    # Preserve the original frontmatter byte for byte, including CRLF.
-    header = re.match(
-        r"\A---[ \t]*\r?\n.*?^---[ \t]*\r?\n", original, re.DOTALL | re.MULTILINE
-    )
-    if not header:
-        raise ValueError("skill requires frontmatter followed by a Markdown body")
-    body = original[header.end() :]
+    body = skill_body(original)
     if before not in body or body.find(before) != body.rfind(before):
         raise ValueError("before must match exactly once in the current skill body")
     updated_body = body.replace(before, after, 1)
-    updated = header.group() + updated_body
+    updated = original[: len(original) - len(body)] + updated_body
     if not updated_body.strip() or len(updated.encode()) > native_config.MAX_FILE_BYTES:
         raise ValueError("updated skill is empty or too large")
 
@@ -65,7 +60,60 @@ def _plan(original, relative, proposal, home_identity, policy):
     return updated, report
 
 
-def review(home, skill, proposal, *, apply=None):
+def skill_body(text):
+    # Keep the exact frontmatter bytes, including CRLF.
+    header = re.match(
+        r"\A---[ \t]*\r?\n.*?^---[ \t]*\r?\n", text, re.DOTALL | re.MULTILINE
+    )
+    if not header:
+        raise ValueError("skill requires frontmatter followed by a Markdown body")
+    return text[header.end() :]
+
+
+@dataclass
+class Skill:
+    home: Path
+    root_fd: int
+    directory: int
+    relative: Path
+    root: os.stat_result
+    snapshot: native_config._NativeSnapshot
+    manifest: dict
+    original: str
+
+    def plan(self, proposal):
+        return _plan(
+            self.original,
+            self.relative,
+            proposal,
+            (self.root.st_dev, self.root.st_ino),
+            self.manifest.get("learning"),
+        )
+
+    def verify(self):
+        self.snapshot.verify()
+        if not os.path.samestat(self.root, os.stat(self.home, follow_symlinks=False)):
+            raise core.HomeError("Home changed during review")
+        checked = native_config._open_relative_dir(
+            self.root_fd, self.relative.parts[:-1]
+        )
+        try:
+            if not os.path.samestat(os.fstat(self.directory), os.fstat(checked)):
+                raise core.HomeError("skill directory changed during review")
+        finally:
+            os.close(checked)
+
+    def publish(self, updated):
+        publication.publish_file(
+            self.directory,
+            self.relative.name,
+            updated,
+            expected=self.snapshot.states[self.home / self.relative],
+        )
+
+
+@contextmanager
+def open_skill(home, skill):
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", skill) or len(skill) > 64:
         raise ValueError("expected a local skill name")
     at_home = Path(home) == Path(".")
@@ -97,31 +145,21 @@ def review(home, skill, proposal, *, apply=None):
         original = snapshot.read(home / relative)
         if original is None:
             raise ValueError("skill does not exist in the selected Home")
-        updated, report = _plan(
-            original,
-            relative,
-            proposal,
-            (root.st_dev, root.st_ino),
-            manifest.get("learning"),
+        yield Skill(
+            home, root_fd, directory, relative, root, snapshot, manifest, original
         )
+
+
+def review(home, skill, proposal, *, apply=None):
+    with open_skill(home, skill) as target:
+        updated, report = target.plan(proposal)
         if apply is not None:
             if apply != report["review_id"]:
                 raise ValueError(
                     "review ID differs; preview the current proposal again"
                 )
-            stack.enter_context(publication.cooperative_lock(root_fd))
-            snapshot.verify()
-            if not os.path.samestat(root, os.stat(home, follow_symlinks=False)):
-                raise core.HomeError("Home changed during review")
-            checked = native_config._open_relative_dir(root_fd, relative.parts[:-1])
-            stack.callback(os.close, checked)
-            if not os.path.samestat(os.fstat(directory), os.fstat(checked)):
-                raise core.HomeError("skill directory changed during review")
-            publication.publish_file(
-                directory,
-                relative.name,
-                updated,
-                expected=snapshot.states[home / relative],
-            )
+            with publication.cooperative_lock(target.root_fd):
+                target.verify()
+                target.publish(updated)
             report["status"] = "applied"
         return report
