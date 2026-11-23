@@ -78,6 +78,8 @@ mode below. Resolve targets against the Home even when working in another projec
 - **scoped-apply**: apply only after explicit user authorization for the named
   target and scope, or within a narrowly preapproved scope explicitly covering
   that target and change. Keep the diff small and report it for review.
+- **auto**: use `soulsteads skill learn` for a named Skillstore-bound skill.
+  The CLI submits, approves and adopts the correction using the configured binding.
 
 Authorization to finish the task is not blanket authority to edit durable guidance.
 If mode or scope is unclear, use propose mode. Never infer approval from silence.
@@ -124,9 +126,10 @@ For a correction to an existing Home skill, use the Home CLI if available:
    Set `reason` to
    the evidence for the edit, `before` to an exact unique passage in the skill
    body, and `after` to its replacement. From the Home root use `.` for HOME.
-2. If the result includes a Skillstore proposal ID, report it and leave the active
-   skill for review and adoption. For a registry preview, show the diff and leave
-   the bound skill awaiting review. If the result is a local preview, show its diff.
+2. If the result is `approved-and-adopted`, report the version and proposal ID.
+   For a pending Skillstore proposal, report the ID for review and adoption.
+   For a registry preview, show the diff and leave the bound skill awaiting
+   review. If the result is a local preview, show its diff.
    Apply with authority for the exact local change by repeating the proposal with
    `soulsteads skill review HOME SKILL --apply REVIEW_ID`. If the ID is stale,
    refresh the preview and obtain any required approval again.
@@ -143,5 +146,6 @@ Do not use generic self-improvement to edit `SOUL.md`, permissions, credentials,
 plugins, or schedules. Preserve identity, security, privacy, and permission
 boundaries; never weaken them to make a task easier. Never automatically install
 skills, plugins, or schedules, create credential stores, or change runtime
-configuration or external state. Commit only when separately authorized.
+configuration. Follow the selected learning mode for Skillstore actions.
+Commit only when separately authorized.
 """

@@ -23,13 +23,15 @@ def _learning_options(command):
         action="append",
         default=[],
         metavar="NAME",
-        help="Existing local skill whose SKILL.md may receive scoped procedural corrections; repeat with --learning scoped-apply",
+        help="Existing local skill whose SKILL.md may receive scoped procedural corrections; repeat with --learning scoped-apply or auto",
     )
 
 
 def _learning_policy(args):
-    if args.learning_skill and args.learning != "scoped-apply":
-        raise ValueError("--learning-skill requires --learning scoped-apply")
+    from .learning import SCOPED_MODES
+
+    if args.learning_skill and args.learning not in SCOPED_MODES:
+        raise ValueError("--learning-skill requires --learning scoped-apply or auto")
     return {"mode": args.learning, "skills": args.learning_skill}
 
 
@@ -193,6 +195,12 @@ def parser():
     bind.add_argument("--version")
     bind.add_argument("--actor")
     bind.add_argument("--token-env")
+    bind.add_argument(
+        "--reviewer-actor", help="Separate Skillstore service reviewer for auto mode"
+    )
+    bind.add_argument(
+        "--reviewer-token-env", help="Environment variable holding the service reviewer's token"
+    )
     bind.add_argument("--no-auto-submit", action="store_true", help="Bind for adoption and local preview only")
     adopt = skills.add_parser("adopt", help="Preview or adopt an exact reviewed Skillstore version")
     adopt.add_argument("agent")
@@ -583,7 +591,7 @@ def main(argv=None):
                 )
             )
         elif args.command == "config":
-            home = agent_path(args.agent, args.agents_dir)
+            home = agent_path(args.agent, args.agents_dir).absolute()
             if args.hindsight_token_env and not args.hindsight_url:
                 raise core.HomeError("--hindsight-token-env requires --hindsight-url")
             if (
@@ -720,13 +728,27 @@ def main(argv=None):
 
             home = agent_path(args.agent, args.agents_dir)
             if args.skill_command == "bind":
-                if args.off and (args.version or args.actor or args.token_env or args.no_auto_submit):
-                    raise ValueError("--off takes no version, actor or token")
+                if args.off and (
+                    args.version
+                    or args.actor
+                    or args.token_env
+                    or args.no_auto_submit
+                    or args.reviewer_actor
+                    or args.reviewer_token_env
+                ):
+                    raise ValueError("--off takes no other binding options")
                 if not args.off and not (args.version and args.actor):
                     raise ValueError("--store requires --version and --actor")
                 report = skillstore.bind(
-                    home, args.name, args.version, store=args.store, actor=args.actor,
-                    token_env=args.token_env, auto_submit=not args.no_auto_submit,
+                    home,
+                    args.name,
+                    args.version,
+                    store=args.store,
+                    actor=args.actor,
+                    token_env=args.token_env,
+                    auto_submit=not args.no_auto_submit,
+                    reviewer_actor=args.reviewer_actor,
+                    reviewer_token_env=args.reviewer_token_env,
                 )
             else:
                 report = skillstore.adopt(home, args.name, args.version, apply=args.apply)

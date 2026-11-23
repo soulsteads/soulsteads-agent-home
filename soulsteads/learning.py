@@ -2,7 +2,8 @@
 
 import re
 
-MODES = ("off", "propose", "scoped-apply")
+MODES = ("off", "propose", "scoped-apply", "auto")
+SCOPED_MODES = ("scoped-apply", "auto")
 POLICY_FILE = "LEARNING.md"
 
 
@@ -21,11 +22,11 @@ def validate(value):
             for name in value["skills"]
         )
         or len(set(value["skills"])) != len(value["skills"])
-        or bool(value["skills"]) != (value["mode"] == "scoped-apply")
+        or bool(value["skills"]) != (value["mode"] in SCOPED_MODES)
     ):
         raise ValueError(
-            "invalid learning policy: choose off, propose, or scoped-apply; "
-            "scoped-apply requires unique local skill names and other modes have no targets"
+            "invalid learning policy: choose off, propose, scoped-apply, or auto; "
+            "scoped-apply and auto require unique local skill names"
         )
 
 
@@ -55,7 +56,20 @@ def render(value):
             "evidence-backed improvement to a reusable procedure. Read the relevant "
             "skill and, if available, skills/skill-maintenance/SKILL.md first.\n"
         )
-        if value["mode"] == "propose":
+        if value["mode"] == "auto":
+            text += (
+                "Automatically improve only these existing Skillstore-bound skills:\n\n"
+                + "".join(f"- `skills/{name}/SKILL.md`\n" for name in value["skills"])
+                + "\nUse `soulsteads skill learn HOME SKILL` with JSON on stdin containing "
+                "reason, before (an exact unique passage in the skill body), and after. "
+                "Use . for HOME when already there. Share only reusable procedural text. "
+                "Submit corrections as part of the task without pausing for review. This "
+                "command validates the change, submits it, approves it using the configured "
+                "service reviewer, and adopts the approved patch release. Report the version "
+                "or any error. Leave the active skill for the command to update. "
+                "Keep identity, privacy, tool permissions, and supporting files outside the edit.\n"
+            )
+        elif value["mode"] == "propose":
             text += (
                 "Show the target, reason and smallest proposed diff. Do not persist "
                 "a local skill edit without explicit user authorization.\n"
@@ -71,21 +85,22 @@ def render(value):
                 "For other targets, propose a diff and wait for explicit authority. "
                 "Validate each applied correction and report its diff and evidence.\n"
             )
-        text += (
-            "For a correction to an existing skill body, use "
-            "`soulsteads skill learn HOME SKILL` with the selected Home path and "
-            "JSON on stdin with reason, before (unique existing body text), and after. "
-            "When already in the Home root, pass . as HOME. "
-            "The command automatically sends a pending proposal for a Skillstore-bound "
-            "skill when its binding enables submission. Keep the reason and replacement free of private task data. "
-            "Report the proposal ID and leave the active skill awaiting review and adoption, "
-            "including in scoped-apply mode. For a registry-preview result, show the diff "
-            "and leave the bound skill awaiting a reviewer. After a submission error, report it without "
-            "applying the same correction locally. An unbound skill returns a local preview. "
-            "Use `soulsteads skill review HOME SKILL` for local review only. Show the diff and "
-            "review_id. With authority for the exact local edit, repeat the same review input "
-            "with `--apply REVIEW_ID`. A review ID identifies the edit and does not confer approval.\n"
-        )
+        if value["mode"] != "auto":
+            text += (
+                "For a correction to an existing skill body, use "
+                "`soulsteads skill learn HOME SKILL` with the selected Home path and "
+                "JSON on stdin with reason, before (unique existing body text), and after. "
+                "When already in the Home root, pass . as HOME. "
+                "The command automatically sends a pending proposal for a Skillstore-bound "
+                "skill when its binding enables submission. Keep the reason and replacement free of private task data. "
+                "Report the proposal ID and leave the active skill awaiting review and adoption, "
+                "including in scoped-apply mode. For a registry-preview result, show the diff "
+                "and leave the bound skill awaiting a reviewer. After a submission error, report it without "
+                "applying the same correction locally. An unbound skill returns a local preview. "
+                "Use `soulsteads skill review HOME SKILL` for local review only. Show the diff and "
+                "review_id. With authority for the exact local edit, repeat the same review input "
+                "with `--apply REVIEW_ID`. A review ID identifies the edit and does not confer approval.\n"
+            )
     return text + (
         "\nFacts and preferences belong in separately authorized curated memory or "
         "the configured memory service; temporary task state belongs in a handoff. "
@@ -93,8 +108,8 @@ def render(value):
         "Hindsight retention. Never create a competing local copy of service-owned memory.\n"
         "Learning does not authorize changes to SOUL.md, USER.md, AGENTS.md, "
         "this policy, runtime configuration, permissions, credentials, plugins or schedules. "
-        "It does not authorize installation, commits or release publication. The enabled "
-        "Skillstore submission, when enabled, is the external action this policy authorizes. "
+        "Keep Git commits and other installations under separate authority. "
+        "Use Skillstore only through the actions described by the active mode. "
         "Native tools and approvals remain authoritative; these are model-followed "
         "instructions, not a sandbox or a background learner.\n"
     )
