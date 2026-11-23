@@ -712,3 +712,38 @@ active Matrix thread. It submits them in order after successful completion, not
 as live steering. If a turn is cancelled or fails, unsubmitted texts are dropped.
 The queue is not durable. Cancellation does not undo completed work or establish
 that the provider stopped. See [compatibility limits](native-acceptance.md#messaging-and-the-optional-native-harness).
+
+## Review one skill change across harnesses
+
+In a Home with learning set to `propose` or `scoped-apply`, Pi, OpenCode,
+Claude Code and Codex receive the same review command through their native
+instructions. Refresh existing Homes with `soulsteads config HOME --sync` and
+start a fresh native session. The CLI must be on PATH for a harness to invoke
+it. An operator can also run the command directly.
+
+For example, suppose the body of `skills/shipping/SKILL.md` contains the exact
+sentence “Record the parcel weight.” From the Home directory, preview one edit:
+
+```sh
+soulsteads skill review . shipping <<'JSON'
+{"reason":"The carrier requires grams.","before":"Record the parcel weight.","after":"Record the parcel weight in grams."}
+JSON
+```
+
+When already in the Home root, pass `.` so the CLI uses the current directory
+as its anchor. This also works in a Linux user namespace that maps system
+directory owners to an unmapped UID. Named paths retain the ancestry checks.
+
+Read the diff locally. To accept it, repeat the same command and JSON with
+`--apply REVIEW_ID` after the skill name, substituting the ID from the preview.
+The ID binds the Home, skill, learning policy, current file content, reason and
+replacement. A changed input requires a fresh preview. The ID is a consistency
+check; approval still comes from the operator or the applicable learning scope.
+
+Only a unique passage in an existing skill body can be replaced. The frontmatter
+and other files are preserved. No proposal file or Git commit is required.
+To undo the edit, preview the inverse change against the current skill and review
+it before applying. Use the normal Home commit command when you want a revision.
+External editors must be quiescent during apply, as for native configuration
+publication. A fresh harness session can load the updated canonical skill through
+its native discovery path.

@@ -71,6 +71,16 @@ def render(value):
                 "For other targets, propose a diff and wait for explicit authority. "
                 "Validate each applied correction and report its diff and evidence.\n"
             )
+        text += (
+            "For a correction to an existing skill body, preview it with "
+            "`soulsteads skill review HOME SKILL` using the selected Home path and "
+            "JSON on stdin with reason, before (unique existing body text), and after. "
+            "When already in the Home root, pass . as HOME. "
+            "Show the diff and review_id. Only with authority for that exact edit, "
+            "repeat the same input with `--apply REVIEW_ID`. A review ID identifies "
+            "the edit and does not confer approval. Prefer stdin over a proposal file "
+            "when the user has authorized preview only.\n"
+        )
     return text + (
         "\nFacts and preferences belong in separately authorized curated memory or "
         "the configured memory service; temporary task state belongs in a handoff. "
