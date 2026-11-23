@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from soulsteads import core
 from soulsteads.cli import main
@@ -73,3 +74,32 @@ class ImprovementCLITests(unittest.TestCase):
         status, _, err = self.call("skill", "undo", str(self.home), draft_id)
         self.assertEqual((status, err), (0, ""))
         self.assertEqual(active.read_bytes(), before)
+
+    def test_skill_learn_preview_coexists_with_a_local_draft(self):
+        home = str(self.home)
+        active = self.home / "skills/starter/SKILL.md"
+        original = b"---\nname: starter\ndescription: shipping\n---\nRecord weight.\n"
+        active.write_bytes(original)
+        candidate = self.root / "candidate.md"
+        candidate.write_bytes(original + b"Check the scale first.\n")
+        status, _, err = self.call("config", home, "--learning", "propose")
+        self.assertEqual((status, err), (0, ""))
+
+        status, out, err = self.call(
+            "skill", "propose", home, "starter", str(candidate), "--reason", "Check the scale."
+        )
+        self.assertEqual((status, err), (0, ""))
+        draft_id = json.loads(out)["id"]
+
+        proposal = {"reason": "Use SI units", "before": "Record weight.",
+                    "after": "Record weight in grams."}
+        with io.TextIOWrapper(io.BytesIO(json.dumps(proposal).encode("utf-8"))) as stdin:
+            with patch("sys.stdin", stdin):
+                status, out, err = self.call("skill", "learn", home, "starter")
+        self.assertEqual((status, err), (0, ""))
+        self.assertEqual(json.loads(out)["status"], "preview")
+        self.assertEqual(active.read_bytes(), original)
+
+        status, out, err = self.call("skill", "show", home, draft_id)
+        self.assertEqual((status, err), (0, ""))
+        self.assertIn("+Check the scale first.", out)
