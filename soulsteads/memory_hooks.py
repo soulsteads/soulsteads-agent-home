@@ -61,6 +61,12 @@ class MCP:
         self.deadline = time.monotonic() + limits["callback_deadline_seconds"]
         self.timeout = limits["request_timeout_seconds"]
 
+    def _remaining(self):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("memory callback deadline")
+        return remaining
+
     def rpc(self, method, params, *, notification=False):
         self.counter += 1
         message = {"jsonrpc": "2.0", "method": method, "params": params}
@@ -77,15 +83,15 @@ class MCP:
         request = Request(
             self.url, data=json.dumps(message).encode(), headers=headers, method="POST"
         )
-        remaining = self.deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("memory callback deadline")
         try:
-            response = self.opener.open(request, timeout=min(self.timeout, remaining))
+            response = self.opener.open(
+                request, timeout=min(self.timeout, self._remaining())
+            )
         except HTTPError as exc:
             exc.close()
             raise
         with response:
+            self._remaining()
             session = response.headers.get("Mcp-Session-Id")
             if session:
                 if len(session) > 256 or not re.fullmatch(r"[\x21-\x7e]+", session):
@@ -96,9 +102,9 @@ class MCP:
             stream = response.headers.get_content_type() == "text/event-stream"
             raw, total, result = bytearray(), 0, None
             while total <= MAX_EVENT:
-                if time.monotonic() > self.deadline:
-                    raise TimeoutError("memory callback deadline")
+                self._remaining()
                 chunk = response.read1(min(65536, MAX_EVENT + 1 - total))
+                self._remaining()
                 total += len(chunk)
                 if total > MAX_EVENT:
                     raise ValueError("oversized MCP response")
@@ -133,6 +139,7 @@ class MCP:
             or "error" in result
         ):
             raise ValueError("MCP operation failed")
+        self._remaining()
         return result["result"]
 
     def call(self, name, arguments):

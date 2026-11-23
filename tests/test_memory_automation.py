@@ -11,12 +11,13 @@ import threading
 import tomllib
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from soulsteads import cli, core, memory_hooks
-from soulsteads.memory_automation import PLUGIN_PATHS
+from soulsteads.memory_automation import PLUGIN_PATHS, effective_policy
 from soulsteads.native_config import sync
 from soulsteads.verification import verify_home
 
@@ -154,6 +155,64 @@ class MemoryAutomationTests(unittest.TestCase):
             {},
         )
         self.assertEqual(self.calls, [])
+
+    def test_rpc_accepts_only_sse_results_returned_before_callback_deadline(self):
+        limits = effective_policy({"callback_deadline_seconds": 1})
+        for elapsed in (0.75, 1.0, 1.25):
+            with self.subTest(elapsed=elapsed):
+                now = 10.0
+                response = MagicMock()
+                response.__enter__.return_value = response
+                response.headers = Message()
+                response.headers["Content-Type"] = "text/event-stream"
+
+                def read(_size):
+                    nonlocal now
+                    now += elapsed
+                    return b'data: {"jsonrpc":"2.0","id":1,"result":{"content":[]}}\n\n'
+
+                response.read1.side_effect = read
+                with patch.object(memory_hooks.time, "monotonic", lambda: now):
+                    mcp = memory_hooks.MCP(self.settings, limits)
+                    with patch.object(
+                        mcp.opener, "open", return_value=response
+                    ) as open_:
+                        params = {"name": "recall", "arguments": {}}
+                        if elapsed < 1:
+                            self.assertEqual(
+                                mcp.rpc("tools/call", params), {"content": []}
+                            )
+                        else:
+                            with self.assertRaisesRegex(
+                                TimeoutError, "callback deadline"
+                            ):
+                                mcp.rpc("tools/call", params)
+                        self.assertEqual(open_.call_args.kwargs["timeout"], 1.0)
+                response.read1.assert_called_once()
+                response.__exit__.assert_called_once()
+
+    def test_rpc_rejects_late_headers_before_recording_session(self):
+        limits = effective_policy({"callback_deadline_seconds": 1})
+        now = 10.0
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.headers = Message()
+        response.headers["Mcp-Session-Id"] = "late-session"
+
+        def open_(_request, *, timeout):
+            nonlocal now
+            self.assertEqual(timeout, 1.0)
+            now += 1.25
+            return response
+
+        with patch.object(memory_hooks.time, "monotonic", lambda: now):
+            mcp = memory_hooks.MCP(self.settings, limits)
+            with patch.object(mcp.opener, "open", side_effect=open_):
+                with self.assertRaisesRegex(TimeoutError, "callback deadline"):
+                    mcp.rpc("notifications/initialized", {}, notification=True)
+        self.assertIsNone(mcp.session)
+        response.read1.assert_not_called()
+        response.__exit__.assert_called_once()
 
     def test_context_budget_includes_json_escaping_and_reference_wrapper(self):
         result = memory_hooks._context(
