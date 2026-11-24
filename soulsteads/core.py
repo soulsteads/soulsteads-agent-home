@@ -443,7 +443,9 @@ def _commit_selected(home: Path, message: str | None, files: dict[str, _Workspac
         _verify_workspace_files(home, files)
         _git_bytes(home, "update-index", "-z", "--index-info", input=b"".join(index_records))
     staged = _staged_names(home)
-    if not staged or any(not allowed(path) for path in staged):
+    if not staged:
+        _error("no changes to commit")
+    if any(not allowed(path) for path in staged):
         _error("index contains unsafe paths")
     if message is None:
         noun = "file" if len(staged) == 1 else "files"

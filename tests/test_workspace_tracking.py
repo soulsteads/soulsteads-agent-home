@@ -59,6 +59,24 @@ class WorkspaceTrackingTests(unittest.TestCase):
         self.assertEqual(self.git("show", f"HEAD:{chosen}"), "Second version\n")
         self.assertEqual((self.home / other).read_text(), "Synthetic workspace output\n")
 
+    def test_unchanged_commit_reports_no_changes_instead_of_unsafe_index(self):
+        name = "workspace/report.md"
+        self.write(name)
+        revision = core.commit(self.home, workspace_files=[name])
+
+        for options in ([], ["--workspace-file", name]):
+            with self.subTest(options=options):
+                with (
+                    redirect_stdout(io.StringIO()) as stdout,
+                    redirect_stderr(io.StringIO()) as stderr,
+                ):
+                    result = cli.main(["commit", str(self.home), *options])
+                self.assertEqual(result, 1)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertEqual(stderr.getvalue(), "soulsteads: no changes to commit\n")
+                self.assertEqual(self.git("rev-parse", "HEAD").strip(), revision)
+                self.assertEqual(self.git("status", "--porcelain"), "")
+
     def test_protected_or_invalid_selection_does_not_stage_companion_file(self):
         good = "workspace/report.md"
         self.write(good)
@@ -86,7 +104,7 @@ class WorkspaceTrackingTests(unittest.TestCase):
         self.write("workspace/second.md")
         self.git("add", "-f", "--", "workspace/second.md")
         before = (self.home / ".git/index").read_bytes()
-        with self.assertRaises(core.HomeError):
+        with self.assertRaisesRegex(core.HomeError, "index contains unsafe paths"):
             core.commit(self.home, workspace_files=["workspace/first.md"])
         self.assertEqual((self.home / ".git/index").read_bytes(), before)
 
