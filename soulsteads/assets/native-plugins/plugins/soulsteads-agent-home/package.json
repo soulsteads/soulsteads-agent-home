@@ -1,0 +1,8 @@
+{
+  "name": "soulsteads-agent-home",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {".": "./index.js"},
+  "pi": {"skills": ["./skills"]}
+}

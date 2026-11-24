@@ -28,4 +28,10 @@ soulsteads = [
     "assets/opencode-v2/*.mjs",
     "assets/opencode-v2/package.json",
     "assets/opencode-v2/*/index.js",
+    "assets/native-plugins/.agents/plugins/marketplace.json",
+    "assets/native-plugins/plugins/*/.claude-plugin/plugin.json",
+    "assets/native-plugins/plugins/*/.codex-plugin/plugin.json",
+    "assets/native-plugins/plugins/*/package.json",
+    "assets/native-plugins/plugins/*/index.js",
+    "assets/native-plugins/plugins/*/skills/*/SKILL.md",
 ]
