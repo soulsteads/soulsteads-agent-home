@@ -31,7 +31,7 @@ tar -xf "$SOURCE_ARCHIVE" -C source
 # directory, use ./source/<directory> in place of ./source on the next line.
 python3 -m venv .venv
 .venv/bin/python -m pip wheel --no-deps --wheel-dir dist ./source
-.venv/bin/python -m pip install './dist/soulsteads-0.2.0-py3-none-any.whl[settings]'
+.venv/bin/python -m pip install './dist/soulsteads-0.3.0-py3-none-any.whl[settings]'
 export PATH="$PWD/.venv/bin:$PATH"
 soulsteads --help
 ```

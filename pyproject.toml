@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "soulsteads"
-version = "0.2.0"
+version = "0.3.0"
 description = "Portable agent definitions mapped to native harness configuration"
 requires-python = ">=3.11"
 readme = "README.md"
