@@ -85,7 +85,7 @@ Each home has:
 - `SOUL.md`: a generic, editable identity and behavior starter.
 - `AGENTS.md`: instructions to read the identity, user, and memory files.
 - `MEMORY.md`: an initially empty durable-memory document.
-- `workspace/`: scratch space for work, excluded from tracking except its placeholder.
+- `workspace/`: scratch space for work, ignored by default except for its placeholder.
 - `skills/`: one portable skill tree, with optional verification and skill-maintenance starters.
 - `soulsteads.json`: name, launch default, manifest version, and generated-file ownership hashes.
 - Coexisting native configuration for all four harnesses and an initial local Git commit.
@@ -338,14 +338,41 @@ network access and does not copy file contents or filenames into the message.
 Explicit messages are preserved; an explicitly blank message is rejected.
 No changes means no new commit. The same safe-file allowlist applies in both modes.
 
-Restore accepts a hexadecimal commit ID from this home's ancestor history and
-creates a **new commit** with the old tracked contents. It does not reset history,
-delete untracked files, or run `git clean`. A dirty tree is refused. Ignored
-workspace output, `.env`, and runtime session/cache files stay untouched.
+To include selected workspace files in the Home's local Git history, name each
+one explicitly:
 
-Tracking is intentionally limited to agent identity/configuration and skills.
-This is not a secret scanner: **never put secrets in tracked Markdown, skills, or
-runtime config**. Ignoring `.env` does not encrypt it. This CLI does not push or
+```sh
+soulsteads commit helper -m "Keep the deliverables" \
+  --workspace-file 'workspace/reports/project notes.md' \
+  --workspace-file workspace/reports/summary.txt
+```
+
+Use paths relative to the Home, starting with `workspace/`. The flag accepts
+individual files up to 64 MiB, not directories or glob patterns. Repeat it on
+later commits to record edits or deletions. Other workspace files stay ignored,
+and changes to previously tracked workspace files aren't committed without selection.
+This works with existing Homes without changing their `.gitignore`.
+
+`soulsteads revert` accepts a hexadecimal commit ID from the Home's ancestor
+history and creates a **new commit** restoring managed Home files. It leaves
+`workspace/` alone, even for tracked files. It does not reset history, delete
+untracked files, or run `git clean`. A dirty tree is refused.
+
+To retrieve a tracked workspace file, inspect it with Git from the Home root:
+
+```sh
+git show '<commit-id>:workspace/reports/summary.txt'
+```
+
+If you want to restore the file in place, first save any current output at that
+path, then run `git restore --source=<commit-id> -- workspace/reports/summary.txt`.
+
+Workspace selection rejects common secret and runtime-state paths, links, special
+files, and files inside nested Git repositories. The CLI records the selected
+file bytes without Git clean filters. Stop other writers before running a commit
+or restore. This is not a secret scanner:
+**review file contents before committing**. Deleting a tracked file doesn't erase
+it from history. Ignoring `.env` does not encrypt it. This CLI does not push or
 publish your generated agent repository.
 
 ## Install a skill
@@ -388,7 +415,7 @@ transfer credentials, or start a messaging service.
 
 - **Keep secrets out of Git.** Ignored private files are not encrypted; tracked Markdown and skills may contain sensitive information.
 - **Import is not activation.** Hermes sessions, schedules, messaging ownership, and external services are not automatically transferred into a running agent.
-- **Restore is scoped.** Only tracked Home contents are restored; ignored workspace output and runtime state stay untouched.
+- **Restore is scoped.** Home restore leaves workspace files and runtime state untouched.
 - **Chat is optional.** Agent Messaging is independent and needs its own setup and credentials.
 
 ## More documentation
