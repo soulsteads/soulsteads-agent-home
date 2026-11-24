@@ -63,10 +63,12 @@ def _render_native(runtime, documents=None, hindsight=None, learning_text=None):
             files[".pi/mcp.json"] = _mcp_json(hindsight)
         return files
     if runtime == "claude":
+        imports = ["AGENTS.md", *IDENTITY_FILES]
+        if learning_text is not None:
+            imports.append("LEARNING.md")
         files = {
             ".claude/settings.json": "{}\n",
-            "CLAUDE.md": "# Agent Home\n\n@AGENTS.md\n@SOUL.md\n@USER.md\n@MEMORY.md\n"
-            + ("@LEARNING.md\n" if learning_text is not None else ""),
+            "CLAUDE.md": "# Agent Home\n\n" + "".join(f"@{name}\n" for name in imports),
         }
         if hindsight:
             files[".mcp.json"] = _mcp_json(hindsight)
