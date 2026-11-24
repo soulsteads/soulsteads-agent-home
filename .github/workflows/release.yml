@@ -6,6 +6,12 @@ on:
   pull_request:
     paths:
       - .github/workflows/release.yml
+      - pyproject.toml
+      - README.md
+      - LICENSE
+      - NOTICE
+      - 'soulsteads/**'
+      - 'tests/**'
 
 permissions:
   contents: read
@@ -37,7 +43,7 @@ jobs:
       - name: Generate and verify asset checksums
         working-directory: dist
         run: |
-          sha256sum * > SHA256SUMS
+          sha256sum -- *.whl *.tar.gz > SHA256SUMS
           sha256sum --strict --check SHA256SUMS
       - name: Pass assets to the publishing job
         if: github.event_name == 'release'
@@ -72,7 +78,29 @@ jobs:
           RELEASE_ID: ${{ github.event.release.id }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          sha256sum --strict --check SHA256SUMS
+          shopt -s dotglob nullglob
+          entries=(*)
+          wheels=(*.whl)
+          sdists=(*.tar.gz)
+          if (( ${#entries[@]} != 3 || ${#wheels[@]} != 1 || ${#sdists[@]} != 1 )); then
+            echo 'Expected exactly one wheel, one sdist, and SHA256SUMS.' >&2
+            exit 1
+          fi
+          packages=("${wheels[0]}" "${sdists[0]}")
+          files=("${packages[@]}" SHA256SUMS)
+          for file in "${files[@]}"; do
+            if [[ ! -f "$file" || -L "$file" || ! "$file" =~ ^[A-Za-z0-9][A-Za-z0-9_.+-]*$ ]]; then
+              echo 'Invalid release asset: expected a regular file with a safe name.' >&2
+              exit 1
+            fi
+          done
+          # Compare the whole manifest in the build job's wheel-then-sdist order.
+          # Never use names read from the manifest to open files.
+          if ! sha256sum -- "${packages[@]}" | cmp -s - SHA256SUMS; then
+            echo 'SHA256SUMS does not match the two release packages.' >&2
+            exit 1
+          fi
+
           [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]
           release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
           jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .draft == false' <<< "$release" > /dev/null
@@ -91,9 +119,7 @@ jobs:
           # Read from the immutable artifact handoff, and upload to the exact event release ID.
           # Resume interrupted uploads only when already-present bytes are identical.
           existing=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100")
-          files=(*)
           for file in "${files[@]}"; do
-            [[ -f "$file" && ! -L "$file" && "$file" =~ ^[A-Za-z0-9_.+-]+$ ]]
             expected="sha256:$(sha256sum -- "$file" | cut -d ' ' -f 1)"
             prior=$(jq -c --arg name "$file" 'flatten | map(select(.name == $name))' <<< "$existing")
             if [[ "$prior" == '[]' ]]; then
