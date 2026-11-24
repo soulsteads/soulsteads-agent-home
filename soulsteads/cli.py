@@ -119,6 +119,11 @@ def parser():
         action="store_true",
         help="Also run each installed harness's version command (read-only, opt-in)",
     )
+    verify.add_argument(
+        "--no-credential-check",
+        action="store_true",
+        help="Do not check whether the Home's Hindsight credential variable is set",
+    )
     capabilities = commands.add_parser(
         "capabilities",
         help="Show adapter support and qualification limits without probing a runtime",
@@ -656,7 +661,9 @@ def main(argv=None):
             from .verification import verify_home
 
             report = verify_home(
-                agent_path(args.agent, args.agents_dir), args.probe_versions
+                agent_path(args.agent, args.agents_dir),
+                args.probe_versions,
+                check_credentials=not args.no_credential_check,
             )
             print(json.dumps(report, indent=2))
             return 1 if report["status"] == "failed" else 0

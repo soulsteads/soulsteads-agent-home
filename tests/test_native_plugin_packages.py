@@ -3,6 +3,7 @@
 from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -10,8 +11,9 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from soulsteads import cli, core
+from soulsteads import cli, core, native_config
 
 
 ASSETS = Path(__file__).resolve().parents[1] / "soulsteads/assets/native-plugins"
@@ -47,33 +49,63 @@ class NativePluginPackagesTest(unittest.TestCase):
         self.assertEqual(package["pi"], {"skills": ["./skills"]})
         self.assertEqual(package["exports"], {".": "./index.js"})
 
-    def test_shared_skill_command_verifies_explicit_home(self):
+    def skill_command(self, home):
         skill = (PLUGIN / "skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")
         command = re.search(r"`(soulsteads verify [^`]+)`", skill)
         if command is None:
             self.fail("the skill must show how to call the CLI")
         argv = shlex.split(command[1])[1:]
         self.assertEqual(argv.count("$home"), 1)
+        return [str(home) if arg == "$home" else arg for arg in argv]
+
+    def run_verify(self, argv, expected_exit=0):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            try:
+                result = cli.main(argv)
+            except SystemExit as exc:
+                result = exc.code
+        self.assertEqual(result, expected_exit, stderr.getvalue())
+        return json.loads(stdout.getvalue())
+
+    def test_shared_skill_command_verifies_explicit_home(self):
         with tempfile.TemporaryDirectory() as root:
             home = core.create(
                 "helper", "pi", path=Path(root).resolve() / "home with spaces"
             )
-            cases = ((home, ("passed", "needs-review"), 0), (home / "absent", ("failed",), 1))
-            for path, statuses, code in cases:
-                with self.subTest(expected_exit=code):
-                    stdout, stderr = io.StringIO(), io.StringIO()
-                    args = [str(path) if arg == "$home" else arg for arg in argv]
-                    with redirect_stdout(stdout), redirect_stderr(stderr):
-                        try:
-                            result = cli.main(args)
-                        except SystemExit as exc:
-                            result = exc.code
-                    self.assertEqual(result, code, stderr.getvalue())
-                    report = json.loads(stdout.getvalue())
-                    self.assertIn(report["status"], statuses)
-                    self.assertEqual(report["scope"], "offline-structural")
-                    self.assertNotIn("version_probe", report)
+            report = self.run_verify(self.skill_command(home))
+            self.assertIn(report["status"], ("passed", "needs-review"))
+            self.assertEqual(report["scope"], "offline-structural")
+            self.assertNotIn("version_probe", report)
+            missing = self.run_verify(self.skill_command(home / "absent"), 1)
+            self.assertEqual(missing["status"], "failed")
             self.assertFalse((home / "absent").exists())
+
+    def test_shared_skill_does_not_check_home_selected_credential_variable(self):
+        name = "SOULSTEADS_TEST_HOME_CREDENTIAL"
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ):
+            home = core.create("helper", "pi", base=Path(root).resolve())
+            native_config.sync(
+                home,
+                hindsight={"url": "https://memory.example/mcp/helper/", "token_env": name},
+            )
+            os.environ.pop(name, None)
+            absent = self.run_verify(self.skill_command(home))
+            os.environ[name] = "fixture-value"
+            with patch.object(os.environ, "get", wraps=os.environ.get) as env_get:
+                present = self.run_verify(self.skill_command(home))
+            self.assertFalse(
+                any(call.args[0] == name for call in env_get.call_args_list),
+                "the skill inspected the Home-selected credential variable",
+            )
+            self.assertEqual(absent, present)
+            findings = {item["id"] for item in present["findings"]}
+            self.assertIn("memory-qualification", findings)
+            self.assertNotIn("memory-credential", findings)
+            # Direct operator verification keeps its existing diagnostic.
+            ordinary = self.run_verify(["verify", str(home)])
+            ordinary_status = {item["id"]: item["status"] for item in ordinary["findings"]}
+            self.assertEqual(ordinary_status["memory-credential"], "passed")
 
     @unittest.skipUnless(shutil.which("node"), "Node required for OpenCode plugin")
     def test_opencode_registers_shared_skill_without_replacing_existing_skill(self):
