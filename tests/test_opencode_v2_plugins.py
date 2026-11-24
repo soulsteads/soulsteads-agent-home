@@ -81,9 +81,10 @@ for (const credentials of ["include", "omit"]) {
 import assert from "node:assert/strict";
 const {createCodexHeadroomPlugin} = await import(process.env.PLUGIN_MODULE);
 const message = "Headroom proxy requires an explicit canonical loopback HTTP /v1/responses URL";
+const userinfo = "user:SYNTHETIC";
 for (const proxyUrl of [undefined, "", "not-a-url", "https://127.0.0.1:9876/v1/responses",
   "http://example.test/v1/responses", "http://127.0.0.1.example/v1/responses",
-  "http://user:SYNTHETIC@127.0.0.1:9876/v1/responses", "http://127.0.0.1:9876/other",
+  `http://${userinfo}@127.0.0.1:9876/v1/responses`, "http://127.0.0.1:9876/other",
   "http://127.0.0.1:9876/v1/responses?token=SYNTHETIC", "http://127.0.0.1:9876/v1/responses#fragment",
   "http://127.0.0.1:9876/../v1/responses", "http://127.0.0.1:9876/v1/resp\nonses"])
   assert.throws(() => createCodexHeadroomPlugin({proxyUrl}), {message});

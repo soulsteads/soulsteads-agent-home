@@ -1,0 +1,119 @@
+name: GitHub Release assets
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify release assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@6b9c6063abd6010835644d4c2e1bef4cf5cd0fca # v6.0.1
+        with:
+          enable-cache: false
+      - name: Build and smoke-test source distribution and wheel
+        shell: bash
+        run: |
+          # uv builds a fresh sdist and then builds the wheel from that sdist.
+          uv build --python 3.12 --out-dir dist
+          uv venv --python 3.12 "$RUNNER_TEMP/release-smoke"
+          uv pip install --python "$RUNNER_TEMP/release-smoke/bin/python" dist/*.whl
+          (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/release-smoke/bin/soulsteads" --help > /dev/null)
+      - name: Generate and verify asset checksums
+        working-directory: dist
+        run: |
+          sha256sum * > SHA256SUMS
+          sha256sum --strict --check SHA256SUMS
+      - name: Pass assets to the publishing job
+        if: github.event_name == 'release'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-assets
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Attach assets to the published release
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: release-assets-${{ github.event.release.id }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-assets
+          path: dist
+      - name: Verify and upload assets without replacing existing files
+        working-directory: dist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          sha256sum --strict --check SHA256SUMS
+          [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")
+          jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .draft == false' <<< "$release" > /dev/null
+          if jq -e '.immutable == true' <<< "$release" > /dev/null; then
+            echo 'This release is immutable; GitHub requires assets to be attached before publication.' >&2
+            exit 1
+          fi
+
+          # Confirm the tag has not moved since the event. Annotated tags have a peeled ref.
+          ref="refs/tags/$RELEASE_TAG"
+          refs=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "$ref" "$ref^{}")
+          object=$(awk -v ref="$ref" '$2 == ref { print $1 }' <<< "$refs")
+          peeled=$(awk -v ref="$ref^{}" '$2 == ref { print $1 }' <<< "$refs")
+          [[ "${peeled:-$object}" == "$GITHUB_SHA" ]]
+
+          # Read from the immutable artifact handoff, and upload to the exact event release ID.
+          # Resume interrupted uploads only when already-present bytes are identical.
+          existing=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100")
+          files=(*)
+          for file in "${files[@]}"; do
+            [[ -f "$file" && ! -L "$file" && "$file" =~ ^[A-Za-z0-9_.+-]+$ ]]
+            expected="sha256:$(sha256sum -- "$file" | cut -d ' ' -f 1)"
+            prior=$(jq -c --arg name "$file" 'flatten | map(select(.name == $name))' <<< "$existing")
+            if [[ "$prior" == '[]' ]]; then
+              continue
+            fi
+            if ! jq -e --arg digest "$expected" 'length == 1 and .[0].digest == $digest and .[0].state == "uploaded"' <<< "$prior" > /dev/null; then
+              printf 'Asset already exists with different or unverified bytes: %s\n' "$file" >&2
+              exit 1
+            fi
+          done
+          for file in "${files[@]}"; do
+            if jq -e --arg name "$file" 'flatten | any(.name == $name)' <<< "$existing" > /dev/null; then
+              continue
+            fi
+            asset_name=$(jq -rn --arg name "$file" '$name | @uri')
+            expected="sha256:$(sha256sum -- "$file" | cut -d ' ' -f 1)"
+            curl --silent --show-error --fail-with-body --max-time 180 \
+              -H "Authorization: Bearer $GH_TOKEN" -H 'Content-Type: application/octet-stream' \
+              --data-binary "@$file" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$asset_name" \
+              | jq -e --arg name "$file" --arg digest "$expected" \
+                  '.name == $name and .digest == $digest and .state == "uploaded"' > /dev/null
+          done

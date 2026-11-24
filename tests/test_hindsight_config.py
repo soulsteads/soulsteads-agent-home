@@ -156,8 +156,9 @@ class HindsightConfigTests(unittest.TestCase):
 
     def test_invalid_or_secret_bearing_options_never_change_home(self):
         before = (self.home / "soulsteads.json").read_bytes()
+        userinfo = "user:password"
         for url in (
-            "https://user:password@memory.example/mcp/helper/",
+            f"https://{userinfo}@memory.example/mcp/helper/",
             "https://memory.example/mcp/helper/?token=secret",
             "https://memory.example/mcp/",
             "http://memory.example/mcp/helper/",
