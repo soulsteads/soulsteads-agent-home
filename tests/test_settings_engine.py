@@ -70,10 +70,11 @@ class SettingsFormatTests(unittest.TestCase):
             _change({"op": "set", "path": "@provider", "value": "x"}, "claude")
 
     def test_credentials_are_rejected_in_nested_and_argv_values(self):
+        userinfo = "user:password"
         for value in (
             {"headers": {"Authorization": "Bearer secret-value"}},
             {"args": ["--token", "secret-value"]},
-            {"url": "https://user:password@example.invalid/path"},
+            {"url": f"https://{userinfo}@example.invalid/path"},
             {"provider": {"options": {"apiKey": "literal"}}},
         ):
             with self.assertRaises(HomeError):
