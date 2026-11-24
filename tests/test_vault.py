@@ -134,6 +134,49 @@ class VaultTests(unittest.TestCase):
                     self.assertEqual((status, out), (1, ""))
                     self.assertIn("credential", err)
 
+    def test_native_selectors_refuse_before_keyring_access_or_launch(self):
+        selectors = {
+            "codex": ("CODEX_HOME", "CODEX_SQLITE_HOME"),
+            "claude": ("CLAUDE_CONFIG_DIR", "CLAUDE_CODE_PROJECT_DIR_NAME"),
+            "pi": ("PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR", "PI_PACKAGE_DIR"),
+            "opencode": (
+                "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT",
+                "OPENCODE_DB", "OPENCODE_DISABLE_CHANNEL_DB", "OPENCODE_DISABLE_GLOBAL_CONFIG",
+                "OPENCODE_DISABLE_PROJECT_CONFIG", "OPENCODE_PERMISSION", "OPENCODE_TUI_CONFIG",
+                "OPENCODE_WORKSPACE_ID",
+            ),
+        }
+        project = self.root / "project"
+        project.mkdir(mode=0o700)
+        homes = {
+            runtime: (
+                self.home if runtime == "pi" else
+                core.create(runtime, runtime, path=self.root / runtime)
+            )
+            for runtime in selectors
+        }
+        with (
+            patch.dict(os.environ),
+            patch.object(vault, "_collection", side_effect=AssertionError("opened keyring")) as keyring,
+            patch("soulsteads.native_config.sync", side_effect=AssertionError("synced Home")) as sync,
+            patch("soulsteads.cli.subprocess") as child,
+        ):
+            for runtime, names in selectors.items():
+                for name in names:
+                    os.environ.pop(name, None)
+                    for mode in ((), ("--dry-run",)):
+                        with self.subTest(runtime=runtime, name=name, mode=mode):
+                            status, out, err = self.invoke(
+                                "run", homes[runtime], "--project", project,
+                                "--allow-context-in-argv", *mode,
+                                "--credential", f"{name}=example",
+                            )
+                            self.assertEqual((status, out), (1, ""))
+                            self.assertIn(f"reserved or existing environment variable: {name}", err)
+            keyring.assert_not_called()
+            sync.assert_not_called()
+            child.run.assert_not_called()
+
     def test_invalid_values_are_rejected_before_storage(self):
         args = ("vault", "set", self.home, "example", "--stdin")
         with patch.object(vault, "_collection", side_effect=AssertionError("opened keyring")):

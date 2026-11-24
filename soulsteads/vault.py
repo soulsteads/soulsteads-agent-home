@@ -18,6 +18,15 @@ _LOGIN_REQUIRED = {"username", "password"}
 _LOGIN_FIELDS = _LOGIN_REQUIRED | {"url"}
 _CONTROL_ENV = {"PATH", "PWD", "HOME", "SHELL", "ENV", "BASH_ENV", "IFS", "CDPATH", "NODE_OPTIONS"}
 _CONTROL_PREFIXES = ("DBUS_", "DYLD_", "LD_", "PYTHON", "XDG_", "OPENCODE_CONFIG")
+# Native selectors are launch configuration, not credential destinations.
+_NATIVE_CONTROL_ENV = {
+    "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_PROJECT_DIR_NAME",
+    "CODEX_HOME", "CODEX_SQLITE_HOME",
+    "OPENCODE_DB", "OPENCODE_DISABLE_CHANNEL_DB", "OPENCODE_DISABLE_GLOBAL_CONFIG",
+    "OPENCODE_DISABLE_PROJECT_CONFIG", "OPENCODE_PERMISSION", "OPENCODE_TUI_CONFIG",
+    "OPENCODE_WORKSPACE_ID",
+    "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR", "PI_PACKAGE_DIR",
+}
 
 
 def validate_alias(alias):
@@ -218,7 +227,10 @@ def parse_bindings(options, inherited):
             raise HomeError("credential field must be username, password, or url")
         if name in bindings:
             raise HomeError(f"duplicate credential environment variable: {name}")
-        if name in inherited or name in _CONTROL_ENV or name.startswith(_CONTROL_PREFIXES):
+        if (
+            name in inherited or name in _CONTROL_ENV or name in _NATIVE_CONTROL_ENV
+            or name.startswith(_CONTROL_PREFIXES)
+        ):
             raise HomeError(f"credential mapping cannot replace a reserved or existing environment variable: {name}")
         bindings[name] = (alias, field if dot else None)
     return bindings
