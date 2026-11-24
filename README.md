@@ -34,6 +34,7 @@ your chosen harness owns execution, sessions, tools, and permissions.
 - **Choose your runtime.** OpenCode, pi, Claude Code, or Codex. Install and authenticate it separately.
 - **Carry a correction between agents.** [Preview and apply a reviewed skill edit](docs/runtimes.md#review-one-skill-change-across-harnesses), then use it in a fresh session with another harness.
 - **Keep a history.** Commit changes and restore earlier tracked contents without rewriting history.
+- **Keep credentials out of Git.** The optional [credential vault](docs/credential-vault.md) uses your Linux keyring and hands selected credentials to a managed launch.
 - **Start small.** Python 3.11+ and Git; ordinary CLI commands have no runtime Python dependencies.
 - **Bring selected Hermes files.** Inspect a profile before importing with the optional `hermes` extra.
 
@@ -227,7 +228,8 @@ soulsteads settings apply --home ./helper --plan-file model-plan.json
 Codex editing requires the optional `settings` extra. The manager also supports
 unset, ordered batches, advanced native fields and portable same-harness
 profiles. External user/project layers are read-only, managed identity is
-protected, and credentials belong in native secret storage rather than plans.
+protected, and credentials belong in native secret storage or the optional
+[Home credential vault](docs/credential-vault.md), not in plans.
 Static inspection is not a claim of runtime-effective precedence. See the
 [settings guide](docs/settings.md) for formats, references and safety limits.
 
