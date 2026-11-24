@@ -1,0 +1,11 @@
+{
+  "name": "soulsteads-local",
+  "plugins": [
+    {
+      "name": "soulsteads-agent-home",
+      "source": {"source": "local", "path": "./plugins/soulsteads-agent-home"},
+      "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+      "category": "Productivity"
+    }
+  ]
+}

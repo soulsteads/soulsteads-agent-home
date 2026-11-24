@@ -212,6 +212,9 @@ runtime can still load its own global configuration.
 
 See [runtime adapters and upstream references](https://github.com/soulsteads/soulsteads-agent-home/blob/main/docs/runtimes.md).
 
+Install the optional [native Agent Home plugin](docs/native-plugins.md) in Claude
+Code, Codex, Pi, or OpenCode v2 to check a named Home from a separate project.
+
 For standalone, explicitly enabled native v2 extensions, see the
 [optional OpenCode v2 plugins](docs/opencode-v2-plugins.md) and the
 [pinned upstream Hindsight integration](integrations/hindsight-opencode/README.md).

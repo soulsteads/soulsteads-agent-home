@@ -1,0 +1,6 @@
+{
+  "name": "soulsteads-agent-home",
+  "version": "0.1.0",
+  "description": "Inspect an explicitly selected Soulsteads Agent Home without changing it.",
+  "author": {"name": "Soulsteads"}
+}
