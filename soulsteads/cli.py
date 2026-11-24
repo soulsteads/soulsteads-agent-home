@@ -261,6 +261,21 @@ def parser():
         type=Path,
         help="Use Home identity and skills with a separate native project directory",
     )
+    run.add_argument(
+        "--credential", action="append", default=[], metavar="ENV=ALIAS",
+        help="Inject one Home vault entry into the runtime environment; repeat as needed",
+    )
+    vault = commands.add_parser("vault", help="Manage Home credentials in the Linux keyring")
+    vault_commands = vault.add_subparsers(dest="vault_command", required=True)
+    put = vault_commands.add_parser("set", help="Add or rotate a credential without displaying it")
+    put.add_argument("agent")
+    put.add_argument("alias")
+    put.add_argument("--stdin", action="store_true", help="Read exact UTF-8 bytes from redirected stdin")
+    names = vault_commands.add_parser("list", help="List aliases only (JSON)")
+    names.add_argument("agent")
+    delete = vault_commands.add_parser("delete", help="Delete a credential from the keyring")
+    delete.add_argument("agent")
+    delete.add_argument("alias")
 
     settings = commands.add_parser(
         "settings", help="Inspect and manage native runtime settings"
@@ -574,6 +589,19 @@ def main(argv=None):
     from . import core
 
     try:
+        if args.command == "vault":
+            from . import vault
+
+            home = agent_path(args.agent, args.agents_dir).absolute()
+            core.load(home)
+            if args.vault_command == "set":
+                vault.validate_alias(args.alias)
+                vault.set_value(home, args.alias, vault.read_input(args.stdin))
+            elif args.vault_command == "delete":
+                vault.delete_value(home, args.alias)
+            else:
+                print(json.dumps(vault.list_aliases(home)))
+            return 0
         if args.command == "settings":
             return _settings_main(args)
         if args.command == "import-hermes":
@@ -705,6 +733,13 @@ def main(argv=None):
         elif args.command == "run":
             home = agent_path(args.agent, args.agents_dir).absolute()
             runtime = core.load(home)["runtime"]
+            bindings, credentials = {}, {}
+            if args.credential:
+                from . import vault
+
+                bindings = vault.parse_bindings(args.credential, os.environ)
+                if not args.dry_run:
+                    credentials = vault.resolve_environment(home, bindings)
             if not args.dry_run:
                 from .native_config import sync
                 sync(home, selected_only=True)
@@ -737,6 +772,8 @@ def main(argv=None):
             try:
                 if args.dry_run:
                     displayed = dict(launch)
+                    if bindings:
+                        displayed["credential_environment"] = list(bindings)
                     if launch.get("private_argv_indices"):
                         displayed["argv"] = list(launch["argv"])
                         for index in launch["private_argv_indices"]:
@@ -746,6 +783,8 @@ def main(argv=None):
                 else:
                     environment = os.environ.copy()
                     overrides = dict(launch.get("env", {}))
+                    if credentials.keys() & (environment.keys() | overrides.keys()):
+                        raise core.HomeError("credential mapping conflicts with the runtime environment")
                     if "OPENCODE_CONFIG_CONTENT" in overrides and environment.get(
                         "OPENCODE_CONFIG_CONTENT"
                     ):
@@ -756,6 +795,7 @@ def main(argv=None):
                             overrides["OPENCODE_CONFIG_CONTENT"],
                         )
                     environment.update(overrides)
+                    environment.update(credentials)
                     # Tools such as OpenCode resolve their project from $PWD, which a
                     # subprocess cwd change does not update; a stale value would load
                     # the caller's directory instead of the Home or project.
