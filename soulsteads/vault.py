@@ -16,7 +16,13 @@ _APPLICATION = "org.soulsteads.agent-home.vault.v1"
 _LOGIN_PREFIX = b"\0soulsteads-login-v1\n"
 _LOGIN_REQUIRED = {"username", "password"}
 _LOGIN_FIELDS = _LOGIN_REQUIRED | {"url"}
-_CONTROL_ENV = {"PATH", "PWD", "HOME", "SHELL", "ENV", "BASH_ENV", "IFS", "CDPATH", "NODE_OPTIONS"}
+# A credential binding must not select a different runtime configuration or state.
+_CONTROL_ENV = {
+    "PATH", "PWD", "HOME", "SHELL", "ENV", "BASH_ENV", "IFS", "CDPATH", "NODE_OPTIONS",
+    "CODEX_HOME", "CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR",
+    "OPENCODE_DISABLE_PROJECT_CONFIG", "OPENCODE_TUI_CONFIG",
+    "SOULSTEADS_HOME", "SOULSTEADS_HARNESS_BIN", "SOULSTEAD_MEMORY_WORKSPACE",
+}
 _CONTROL_PREFIXES = ("DBUS_", "DYLD_", "LD_", "PYTHON", "XDG_", "OPENCODE_CONFIG")
 
 
