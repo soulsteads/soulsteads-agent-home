@@ -25,7 +25,7 @@ class Item:
         self.collection.reads += 1
         return self.value
 
-    def set_secret(self, value):
+    def set_secret(self, value, *, content_type):
         self.value = value
 
     def delete(self):
@@ -40,7 +40,7 @@ class Collection:
     def search_items(self, attributes):
         return (item for item in self.items if attributes.items() <= item.attributes.items())
 
-    def create_item(self, label, attributes, value, *, replace):
+    def create_item(self, label, attributes, value, *, replace, content_type):
         self.items.append(Item(self, attributes, value))
 
 
@@ -126,6 +126,7 @@ class VaultTests(unittest.TestCase):
             patch.dict(os.environ, {"ALREADY_SET": "ambient"}),
         ):
             for binding in (("BAD-NAME=example",), ("OK=",), ("PATH=example",), ("PWD=example",),
+                            ("OK=example.",), ("OK=example.other",), ("OK=example.url.extra",),
                             ("OK=example", "OK=another"), ("ALREADY_SET=example",)):
                 with self.subTest(binding=binding):
                     args = [arg for item in binding for arg in ("--credential", item)]
@@ -181,6 +182,102 @@ class VaultTests(unittest.TestCase):
             status, out, err = self.invoke("run", self.home, "--dry-run")
         self.assertEqual((status, err), (0, ""))
         self.assertNotIn("credential_environment", json.loads(out))
+
+    def test_login_round_trips_requested_fields_from_one_keyring_item(self):
+        login = {
+            "username": "synthetic account",
+            "password": self.value,
+            "url": "https://service.example.test/login",
+        }
+        runtime = self.root / "pi"
+        runtime.write_text(
+            '#!/bin/sh\nprintf "%s\\000" "$LOGIN_USER" "$LOGIN_PASS" "$LOGIN_SITE" > "$LOGIN_MARKER"\n',
+            encoding="utf-8",
+        )
+        runtime.chmod(0o700)
+        marker = self.root / "login-marker"
+        self.enterContext(patch.dict(os.environ, {
+            "PATH": str(self.root) + os.pathsep + os.environ["PATH"],
+            "LOGIN_MARKER": str(marker),
+        }))
+        args = ("vault", "set", self.home, "service", "--login", "--stdin")
+        self.assertEqual(self.invoke(*args, data=json.dumps(login).encode()), (0, "", ""))
+        self.assertEqual(self.invoke("vault", "list", self.home), (0, '["service"]\n', ""))
+        self.assertEqual(len(self.store.items), 1)
+        for value in login.values():
+            self.assertNotIn(value, json.dumps(self.store.items[0].attributes))
+        self.assertEqual(self.store.reads, 0)
+
+        bindings = []
+        for name, field in zip(("LOGIN_USER", "LOGIN_PASS", "LOGIN_SITE"), login):
+            bindings.extend(("--credential", f"{name}=service.{field}"))
+        self.assertEqual(self.invoke("run", self.home, *bindings), (0, "", ""))
+        self.assertEqual(marker.read_bytes().split(b"\0"), [*(v.encode() for v in login.values()), b""])
+        self.assertEqual(self.store.reads, 1)
+
+        # Replacing a login without the optional URL removes the old URL.
+        login.pop("url")
+        self.assertEqual(self.invoke(*args, data=json.dumps(login).encode()), (0, "", ""))
+        marker.unlink()
+        status, out, err = self.invoke("run", self.home, *bindings)
+        self.assertEqual((status, out), (1, ""))
+        self.assertIn("url", err)
+        self.assertFalse(marker.exists())
+        self.assertEqual(self.invoke("run", self.home, *bindings[:-2]), (0, "", ""))
+        self.assertEqual(marker.read_bytes().split(b"\0"), [*(v.encode() for v in login.values()), b"", b""])
+
+    def test_interactive_login_hides_input_and_can_omit_url(self):
+        with patch("getpass.getpass", side_effect=("synthetic account", self.value, "")) as prompt:
+            self.assertEqual(self.invoke("vault", "set", self.home, "service", "--login"), (0, "", ""))
+        self.assertEqual([call.args[0].split()[0] for call in prompt.call_args_list],
+                         ["Username:", "Password:", "URL"])
+        self.assertEqual(
+            vault._decode_entry(self.store.items[0].value),
+            {"username": "synthetic account", "password": self.value},
+        )
+
+    def test_invalid_login_input_does_not_replace_existing_entry(self):
+        args = ("vault", "set", self.home, "service", "--stdin")
+        self.assertEqual(self.invoke(*args, data=b"keep this value"), (0, "", ""))
+        valid = {"username": "synthetic account", "password": self.value}
+        variants = [
+            b"[", b"[]", b"\xff", b"[" * 1200 + b"]" * 1200,
+            b'{"username":"first","username":"second","password":"synthetic"}',
+            *(json.dumps(fields).encode() for fields in (
+                {"username": valid["username"]}, {"password": self.value},
+                {**valid, "username": ""}, {**valid, "password": 42},
+                {**valid, "url": ""}, {**valid, "url": None}, {**valid, "extra": "field"},
+                {**valid, "password": "prefix\0suffix"}, {**valid, "password": "\ud800"},
+                {**valid, "password": "x" * (16 * 1024 + 1)},
+            )),
+        ]
+        with patch.object(vault, "_collection", side_effect=AssertionError("opened keyring")):
+            for index, value in enumerate(variants):
+                with self.subTest(index=index):
+                    status, out, err = self.invoke(*args, "--login", data=value)
+                    self.assertEqual((status, out), (1, ""))
+                    self.assertIn("credential", err)
+        self.assertEqual(self.store.items[0].value, b"keep this value")
+
+    def test_launch_refuses_wrong_entry_shape_or_invalid_saved_payload(self):
+        args = ("vault", "set", self.home, "service", "--stdin")
+        login_json = json.dumps({"username": "synthetic account", "password": self.value}).encode()
+        login = self.invoke(*args, "--login", data=login_json)
+        self.assertEqual(login, (0, "", ""))
+        item = self.store.items[0]
+        cases = (
+            (item.value, "service", "requires an explicit field"),
+            (login_json, "service.password", "single value and has no fields"),
+            (b"\0unknown-format", "service.password", "invalid login credential record"),
+            (item.value.replace(b'"username"', b'"extra"'), "service.password", "optional url"),
+        )
+        with patch("soulsteads.native_config.sync", side_effect=AssertionError("synced Home")):
+            for value, reference, diagnostic in cases:
+                with self.subTest(reference=reference, diagnostic=diagnostic):
+                    item.value = value
+                    status, out, err = self.invoke("run", self.home, "--credential", f"APP_LOGIN={reference}")
+                    self.assertEqual((status, out), (1, ""))
+                    self.assertIn(diagnostic, err)
 
 
 if __name__ == "__main__":

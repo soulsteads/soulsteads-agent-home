@@ -262,15 +262,16 @@ def parser():
         help="Use Home identity and skills with a separate native project directory",
     )
     run.add_argument(
-        "--credential", action="append", default=[], metavar="ENV=ALIAS",
-        help="Inject one Home vault entry into the runtime environment; repeat as needed",
+        "--credential", action="append", default=[], metavar="ENV=ALIAS[.FIELD]",
+        help="Inject one vault value or login field into the runtime environment; repeat as needed",
     )
     vault = commands.add_parser("vault", help="Manage Home credentials in the Linux keyring")
     vault_commands = vault.add_subparsers(dest="vault_command", required=True)
     put = vault_commands.add_parser("set", help="Add or rotate a credential without displaying it")
     put.add_argument("agent")
     put.add_argument("alias")
-    put.add_argument("--stdin", action="store_true", help="Read exact UTF-8 bytes from redirected stdin")
+    put.add_argument("--login", action="store_true", help="Store a username, password and optional URL together")
+    put.add_argument("--stdin", action="store_true", help="Read redirected UTF-8 input (JSON object with --login)")
     names = vault_commands.add_parser("list", help="List aliases only (JSON)")
     names.add_argument("agent")
     delete = vault_commands.add_parser("delete", help="Delete a credential from the keyring")
@@ -596,7 +597,10 @@ def main(argv=None):
             core.load(home)
             if args.vault_command == "set":
                 vault.validate_alias(args.alias)
-                vault.set_value(home, args.alias, vault.read_input(args.stdin))
+                if args.login:
+                    vault.set_login(home, args.alias, vault.read_login(args.stdin))
+                else:
+                    vault.set_value(home, args.alias, vault.read_input(args.stdin))
             elif args.vault_command == "delete":
                 vault.delete_value(home, args.alias)
             else:

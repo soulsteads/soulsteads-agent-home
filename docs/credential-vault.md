@@ -44,6 +44,35 @@ Run `vault set` again to replace an entry. Run
 changes credentials already in running processes or revokes them at the provider;
 rotate or revoke them there and restart affected processes as needed.
 
+## Store a login
+
+Use `--login` to store a username and password together under one alias. The
+three prompts do not echo input. Leave the URL blank to omit it.
+
+```sh
+soulsteads vault set helper service --login
+soulsteads run helper \
+  --credential APP_LOGIN_USER=service.username \
+  --credential APP_LOGIN_PASS=service.password \
+  --credential APP_LOGIN_SITE=service.url
+```
+
+Map only the fields your runtime needs. Omit the `url` mapping if the entry
+doesn't have a URL. A missing field stops the launch; a login alias by itself
+never passes the whole record. The URL is stored as text: Agent Home neither
+opens it nor verifies that it matches the destination the runtime connects to.
+
+For automation, `vault set helper service --login --stdin` accepts a UTF-8 JSON
+object from redirected input. It requires nonempty strings named `username` and
+`password` and accepts one optional nonempty `url` string. Omit the key rather
+than using an empty string or `null`. Input and the encoded login record are
+each limited to 16 KiB. Supply the JSON through a trusted pipe rather than
+putting values in command arguments, shell history, or a tracked file.
+
+Setting an existing alias replaces the entire entry; omitting the URL removes
+the previous URL. `vault list` still shows aliases only. Single-value entries
+such as API keys still use `set` without `--login` and bindings without a field.
+
 ## Security and portability limits
 
 - Scope is by absolute Home path in the selected user's default keyring, not by
