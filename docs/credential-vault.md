@@ -33,7 +33,10 @@ soulsteads run helper --credential APPLICATION_TOKEN=application
   Use the environment variable the native provider or extension expects. Do not
   put vault bindings in tracked files: the vault does not resolve settings or
   substitute values into generated configuration. Existing environment variables,
-  duplicate destinations, and reserved launcher variables cannot be overridden.
+  duplicate destinations, and reserved launcher or runtime settings are rejected.
+  This includes configuration and state selectors such as `CODEX_HOME`,
+  `CLAUDE_CONFIG_DIR`, `PI_CODING_AGENT_DIR`, and `OPENCODE_CONFIG_DIR`, even
+  when they are not set in the parent environment.
 - Dry runs display only the destination variable names and never open the
   keyring. Real launches fail before starting the harness if a requested
   credential is missing or the keyring is unavailable. Running a native harness

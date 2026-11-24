@@ -134,6 +134,29 @@ class VaultTests(unittest.TestCase):
                     self.assertEqual((status, out), (1, ""))
                     self.assertIn("credential", err)
 
+    def test_runtime_selectors_are_rejected_before_keyring_or_sync(self):
+        selectors = (
+            "CODEX_HOME", "CLAUDE_CONFIG_DIR", "PI_CODING_AGENT_DIR",
+            "OPENCODE_CONFIG_DIR", "OPENCODE_DISABLE_PROJECT_CONFIG", "OPENCODE_TUI_CONFIG",
+            "SOULSTEAD_MEMORY_WORKSPACE", "SOULSTEADS_HOME", "SOULSTEADS_HARNESS_BIN",
+        )
+        inherited = {key: value for key, value in os.environ.items() if key not in selectors}
+        with (
+            patch.dict(os.environ, inherited, clear=True),
+            patch.object(vault, "_collection") as keyring,
+            patch("soulsteads.native_config.sync") as sync,
+        ):
+            # Deny keyring access while still exercising the real CLI admission path.
+            keyring.side_effect = core.HomeError("unexpected keyring access")
+            for name in selectors:
+                for mode in ((), ("--dry-run",)):
+                    with self.subTest(name=name, mode=mode):
+                        status, out, err = self.invoke("run", self.home, *mode, "--credential", f"{name}=example")
+                        self.assertEqual((status, out), (1, ""))
+                        self.assertIn(f"reserved or existing environment variable: {name}", err)
+            keyring.assert_not_called()
+            sync.assert_not_called()
+
     def test_invalid_values_are_rejected_before_storage(self):
         args = ("vault", "set", self.home, "example", "--stdin")
         with patch.object(vault, "_collection", side_effect=AssertionError("opened keyring")):
