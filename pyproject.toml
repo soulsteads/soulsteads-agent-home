@@ -15,6 +15,7 @@ dependencies = []
 [project.optional-dependencies]
 hermes = ["PyYAML>=6.0.2,<7"]
 settings = ["tomlkit>=0.12,<1"]
+vault = ["SecretStorage>=3.3.3,<4; sys_platform == 'linux'"]
 
 [project.scripts]
 soulsteads = "soulsteads.cli:main"

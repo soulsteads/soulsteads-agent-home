@@ -168,8 +168,11 @@ Native reference forms differ:
 - Pi extension reference support depends on the installed extension. Do not
   assume a shell-style reference is a built-in Pi setting.
 
-Configure the real credential through the harness's approved native credential
-mechanism or secret store. The manager does not copy authentication state.
+Configure real credentials through the harness's native authentication mechanism,
+an external secret store, or the optional [Home credential vault](credential-vault.md).
+The vault supplies selected environment variables at `soulsteads run` time;
+settings inspection and export never open it or resolve references. Native
+authentication state stays with the harness.
 
 ## Export and import
 
