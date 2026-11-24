@@ -438,9 +438,11 @@ by `verify` and `capabilities`. No ordinary test accesses a real memory bank.
 storage, skill metadata, and safe aliases without launching a harness or fixing
 files. It reports each adapter's paths and loading mechanism, required native
 trust/reload actions, and an **unverified** runtime version; by default it does
-not probe or install a harness (see the opt-in probe below). Configured memory always retains a separate qualification
-finding. A missing credential is actionable, but a present variable is not proof
-of valid authorization, server availability, correct bank, or native approval.
+not probe or install a harness (see the opt-in probe below). With Hindsight
+configured, it checks whether the named environment variable is set. Use
+`soulsteads verify --no-credential-check helper` to omit that check and finding
+without skipping structural or memory qualification findings. A set variable
+does not prove authorization, server availability, bank identity, or approval.
 `needs-review` is not activation proof. Generated files cannot guarantee that a
 model follows instructions or chooses a skill.
 

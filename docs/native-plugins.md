@@ -2,12 +2,11 @@
 
 The opt-in `soulsteads-agent-home` package exposes one shared skill,
 `soulsteads-home-status`, in Claude Code, Codex, Pi, and OpenCode v2. Use it to
-check a Home you name explicitly while working in a separate project. It calls
-`soulsteads verify` for an offline structural check, not to attach that Home to
-the current session. There are no background hooks, new permissions, automatic
-memory, or changes to the Home's settings. Use the existing
-[Home-managed project launch](runtimes.md#separate-project-launch) when you want
-to load a Home's identity and skills instead.
+check a named Home from a separate project. It verifies the Home's structure
+offline without probing harness versions or checking whether its configured
+credential variable is set. It does not attach, modify, or start the Home.
+Use [Home-managed project launch](runtimes.md#separate-project-launch) to load
+a Home's identity and skills instead.
 
 ## Locate the package
 
@@ -21,10 +20,9 @@ market=$(python3 -c 'from importlib.resources import files; print(files("soulste
 plugin="$market/plugins/soulsteads-agent-home"
 ```
 
-The installed `soulsteads` command must be on the harness's PATH to execute the
-check. If the harness does not grant shell access, run `soulsteads verify`
-directly instead of relaxing its permissions. The plugin does not grant trust
-or alter approvals.
+Put the `soulsteads` CLI from the same checkout or installation on the harness's
+PATH. Without shell access, run `soulsteads verify --no-credential-check helper`
+yourself instead of relaxing the harness's permissions.
 
 ## Enable in your harness
 

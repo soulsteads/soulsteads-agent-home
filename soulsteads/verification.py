@@ -28,7 +28,7 @@ def _json(raw):
     return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
 
 
-def verify_home(home, probe_versions=False):
+def verify_home(home, probe_versions=False, *, check_credentials=True):
     """Return content-free findings; success is not runtime or privacy certification."""
     findings = []
     adapters = []
@@ -177,17 +177,18 @@ def verify_home(home, probe_versions=False):
             else "No explicit learning mode is configured; existing guidance is retained.",
             "Review the selected mode and diff; native permissions enforce access and model behavior remains unverified.",
         )
-        if manifest.get("hindsight") is not None:
-            # plan() has already validated this reference. Never echo its values.
-            present = bool(os.environ.get(manifest["hindsight"]["token_env"]))
-            add(
-                "memory-credential",
-                "passed" if present else "needs-review",
-                "The referenced credential environment variable is set; its validity is unverified."
-                if present
-                else "The referenced credential environment variable is not set.",
-                "Supply the credential through the harness environment, never in native files or Git.",
-            )
+        hindsight = manifest.get("hindsight")
+        if hindsight is not None:
+            if check_credentials:
+                present = bool(os.environ.get(hindsight["token_env"]))
+                add(
+                    "memory-credential",
+                    "passed" if present else "needs-review",
+                    "The referenced credential environment variable is set; its validity is unverified."
+                    if present
+                    else "The referenced credential environment variable is not set.",
+                    "Supply the credential through the harness environment, never in native files or Git.",
+                )
             add(
                 "memory-qualification",
                 "needs-review",
