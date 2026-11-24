@@ -1,12 +1,12 @@
 """Explicit workspace versioning uses the existing local Home history."""
 
-from contextlib import redirect_stderr, redirect_stdout
 import io
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 from soulsteads import cli, core
@@ -202,8 +202,10 @@ class WorkspaceTrackingTests(unittest.TestCase):
                 report.write_text("New version from a concurrent editor\n")
             return result
 
-        with patch.object(core, "_git_bytes", side_effect=concurrent_edit):
-            with self.assertRaisesRegex(core.HomeError, "workspace selection changed"):
-                core.commit(self.home, workspace_files=[name])
+        with (
+            patch.object(core, "_git_bytes", side_effect=concurrent_edit),
+            self.assertRaisesRegex(core.HomeError, "workspace selection changed"),
+        ):
+            core.commit(self.home, workspace_files=[name])
         self.assertEqual(self.git("rev-parse", "HEAD"), initial)
         self.assertNotIn(name, self.git("ls-files", "--cached"))

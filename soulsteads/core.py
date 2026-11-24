@@ -356,9 +356,13 @@ def _verify_workspace_files(home: Path, files: dict[str, _WorkspaceFile]) -> Non
                 if current_chain == chain:
                     if info is None and current is None:
                         continue
-                    if info is not None and current is not None and fd is not None:
-                        if _identity(info) == _identity(current) == _identity(os.fstat(fd)):
-                            continue
+                    if (
+                        info is not None
+                        and current is not None
+                        and fd is not None
+                        and _identity(info) == _identity(current) == _identity(os.fstat(fd))
+                    ):
+                        continue
         except HomeError as exc:
             raise HomeError("workspace selection changed before commit") from exc
         _error("workspace selection changed before commit")
