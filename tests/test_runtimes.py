@@ -39,7 +39,15 @@ class RuntimeTests(unittest.TestCase):
                 self.assertEqual((home / native / "skills").resolve(), home / "skills")
                 self.assertTrue((home / native / "skills/starter/SKILL.md").is_file())
                 if runtime == "claude":
-                    self.assertIn("@SOUL.md", (home / "CLAUDE.md").read_text())
+                    self.assertEqual(
+                        (home / "CLAUDE.md").read_text(),
+                        "# Agent Home\n\n"
+                        "@AGENTS.md\n"
+                        "@SOUL.md\n"
+                        "@USER.md\n"
+                        "@MEMORY.md\n"
+                        "@LEARNING.md\n",
+                    )
 
 
 if __name__ == "__main__":
