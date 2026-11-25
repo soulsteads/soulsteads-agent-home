@@ -80,6 +80,11 @@ isolated `HOME` and `PYTHONPATH`. The package depends on Python 3.11+ and Git;
 its
 Hermes, settings, and Linux vault extras are Debian `Recommends`.
 
+The Debian version is derived from the built wheel's release version. It
+preserves prerelease and epoch ordering; Python local version labels (such as
+`+local`) are not supported for Debian builds. Epochs appear as `%3a` in artifact
+filenames and `:` in package metadata.
+
 ## Create an agent
 
 ```sh

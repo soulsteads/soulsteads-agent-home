@@ -38,22 +38,6 @@ done
 command -v uv >/dev/null || { echo 'uv is required to build the wheel' >&2; exit 1; }
 command -v "$DPKG_DEB" >/dev/null || { echo 'dpkg-deb is required to build the Debian package' >&2; exit 1; }
 
-metadata=$(python3 -I - "$ROOT/pyproject.toml" <<'PY'
-import sys
-import tomllib
-
-with open(sys.argv[1], 'rb') as source:
-    project = tomllib.load(source)["project"]
-print(project["name"] + "\t" + project["version"])
-PY
-)
-project_name=${metadata%%$'\t'*}
-version=${metadata#*$'\t'}
-[[ "$project_name" == "$PROJECT" && "$version" =~ ^[0-9][A-Za-z0-9.+:~\-]*$ ]] || {
-    echo 'pyproject.toml has unexpected package metadata' >&2
-    exit 1
-}
-
 mkdir -p -- "$OUT_DIR"
 OUT_DIR=$(cd -- "$OUT_DIR" && pwd -P)
 work=$(mktemp -d "${TMPDIR:-/tmp}/soulsteads-agent-home-deb.XXXXXXXX")
@@ -105,8 +89,9 @@ with zipfile.ZipFile(wheel) as archive:
 PY
 
 test -f "$stage/usr/lib/python3/dist-packages/$MODULE/__init__.py"
-test -f "$stage/usr/lib/python3/dist-packages/$PROJECT-$version.dist-info/METADATA" || \
-    test -f "$stage/usr/lib/python3/dist-packages/${PROJECT//-/_}-$version.dist-info/METADATA"
+debian_version=$(python3 -I "$ROOT/scripts/debian-version.py" "$stage/usr/lib/python3/dist-packages" "$PROJECT")
+# Encode an epoch for the artifact filename (the Debian control field keeps ':').
+filename_version=${debian_version//:/%3a}
 
 cat > "$stage/usr/bin/$ENTRYPOINT" <<EOF
 #!/usr/bin/python3
@@ -120,7 +105,7 @@ chmod 0755 "$stage/usr/bin/$ENTRYPOINT"
 
 cat > "$stage/DEBIAN/control" <<EOF
 Package: $PACKAGE
-Version: $version
+Version: $debian_version
 Section: utils
 Priority: optional
 Architecture: all
@@ -151,13 +136,13 @@ test ! -e "$stage/DEBIAN/postinst"
 test ! -e "$stage/DEBIAN/prerm"
 test ! -e "$stage/DEBIAN/postrm"
 
-package_file="$OUT_DIR/${PACKAGE}_${version}_all.deb"
+package_file="$OUT_DIR/${PACKAGE}_${filename_version}_all.deb"
 rm -f -- "$package_file"
 "$DPKG_DEB" --build --root-owner-group "$stage" "$package_file" >/dev/null
 
 control=$("$DPKG_DEB" -f "$package_file")
 grep -Fx "Package: $PACKAGE" <<<"$control" >/dev/null
-grep -Fx "Version: $version" <<<"$control" >/dev/null
+grep -Fx "Version: $debian_version" <<<"$control" >/dev/null
 grep -Fx "Depends: $DEPENDS" <<<"$control" >/dev/null
 grep -Fx "Recommends: $RECOMMENDS" <<<"$control" >/dev/null
 "$DPKG_DEB" -x "$package_file" "$extract"
