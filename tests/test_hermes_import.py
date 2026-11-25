@@ -305,7 +305,6 @@ class HermesImportTests(unittest.TestCase):
             "plugins: {}\nplugins: {secret: NEVER_ECHO_ME}\n",
             "key: [NEVER_ECHO_ME\n",
             "key: !!python/object:NEVER_ECHO_ME {}\n",
-            "a: &alias [x]\nb: *alias\n",
         ):
             with self.subTest(raw=raw):
                 (self.source / "config.yaml").write_text(raw)
@@ -315,6 +314,107 @@ class HermesImportTests(unittest.TestCase):
                     )
                 self.assertNotIn("NEVER_ECHO_ME", str(caught.exception))
                 self.assertFalse(self.destination.exists())
+
+    @unittest.skipUnless(
+        sys.platform == "linux", "Atomic import publication requires Linux"
+    )
+    def test_config_aliases_support_inspect_and_apply_without_source_mutation(self):
+        self.skill("disabled", "disabled-skill")
+        raw = (
+            b"skill-defaults: &skill-defaults\n"
+            b"  disabled: [disabled-skill]\n"
+            b"skills:\n"
+            b"  <<: *skill-defaults\n"
+            b"model: &disabled false\n"
+            b"model-copy: *disabled\n"
+        )
+        (self.source / "config.yaml").write_bytes(raw)
+
+        inspected = inspect_source("helper", self.source)
+        self.assertEqual(inspected["status"], "inspected")
+        self.assertEqual(inspected["skills"], [])
+        self.assertFalse(self.destination.exists())
+
+        applied = import_profile(
+            "helper", self.source, path=self.destination, allow_partial=True
+        )
+        self.assertEqual(applied["status"], "imported")
+        self.assertEqual(
+            (self.destination / ".runtime/hermes/config.yaml").read_bytes(), raw
+        )
+        self.assertEqual((self.source / "config.yaml").read_bytes(), raw)
+
+    def test_config_explicit_mapping_key_overrides_a_merge(self):
+        self.skill("visible", "visible-skill")
+        (self.source / "config.yaml").write_bytes(
+            b"skill-defaults: &skill-defaults\n"
+            b"  disabled: [visible-skill]\n"
+            b"skills:\n"
+            b"  disabled: []\n"
+            b"  <<: *skill-defaults\n"
+        )
+        report = inspect_source("helper", self.source)
+        self.assertEqual(report["skills"], ["visible-skill"])
+
+    def test_config_alias_rejections_publish_nothing(self):
+        cases = {
+            "recursive": b"loop: &loop [*loop]\n",
+            "undefined": b"value: *SYNTHETIC_ALIAS_MARKER\n",
+            "conflicting-merges": (
+                b"left: &left {disabled: [one]}\n"
+                b"right: &right {disabled: [two]}\n"
+                b"skills:\n  <<: [*left, *right]\n"
+            ),
+        }
+        for name, raw in cases.items():
+            with self.subTest(name=name):
+                (self.source / "config.yaml").write_bytes(raw)
+                with self.assertRaises(ImportErrorSafe):
+                    inspect_source("helper", self.source)
+                with self.assertRaises(ImportErrorSafe) as caught:
+                    import_profile(
+                        "helper", self.source, path=self.destination, allow_partial=True
+                    )
+                self.assertNotIn("SYNTHETIC_ALIAS_MARKER", str(caught.exception))
+                self.assertFalse(self.destination.exists())
+                self.assertFalse(list(self.root.glob(".hermes-import-*")))
+
+    def test_config_alias_logical_expansion_limits_publish_nothing(self):
+        def aliases(prefix, levels, template):
+            rows = [f"{prefix}0: &{prefix}0 [safe]"]
+            rows.extend(
+                template.format(current=index, previous=index - 1, prefix=prefix)
+                for index in range(1, levels)
+            )
+            rows.append(f"payload: *{prefix}{levels - 1}")
+            return "\n".join(rows).encode() + b"\n"
+
+        cases = {
+            "logical-depth": aliases(
+                "depth", 48, "{prefix}{current}: &{prefix}{current} [*{prefix}{previous}]"
+            ),
+            "logical-size": aliases(
+                "size", 20, "{prefix}{current}: &{prefix}{current} [*{prefix}{previous}, *{prefix}{previous}]"
+            ),
+        }
+        for name, raw in cases.items():
+            with self.subTest(name=name):
+                (self.source / "config.yaml").write_bytes(raw)
+                with self.assertRaises(ImportErrorSafe):
+                    import_profile(
+                        "helper", self.source, path=self.destination, allow_partial=True
+                    )
+                self.assertFalse(self.destination.exists())
+                self.assertFalse(list(self.root.glob(".hermes-import-*")))
+
+    def test_aliases_remain_rejected_for_skill_frontmatter(self):
+        skill = self.skill("alias", "alias-skill")
+        (skill / "SKILL.md").write_text(
+            "---\nname: &name alias-skill\ndescription: *name\n---\n# Synthetic\n"
+        )
+        with self.assertRaises(ImportErrorSafe):
+            inspect_source("helper", self.source)
+        self.assertFalse(self.destination.exists())
 
     def test_links_hardlinks_special_and_oversized_files_are_refused(self):
         soul = self.source / "SOUL.md"

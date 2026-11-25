@@ -63,6 +63,46 @@ class CLITests(unittest.TestCase):
             self.assertEqual(repeated.returncode, 1)
             self.assertNotIn("Traceback", repeated.stderr)
 
+    @unittest.skipUnless(
+        sys.platform == "linux", "Atomic import publication requires Linux"
+    )
+    def test_import_hermes_config_aliases_inspect_and_apply(self):
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as tmp:
+            source = Path(tmp) / "source"
+            source.mkdir(mode=0o700)
+            raw = (
+                b"defaults: &defaults\n"
+                b"  disabled: []\n"
+                b"skills:\n"
+                b"  <<: *defaults\n"
+                b"model: &disabled false\n"
+                b"model-copy: *disabled\n"
+            )
+            (source / "config.yaml").write_bytes(raw)
+            destination = Path(tmp) / "imported"
+            arguments = (
+                "import-hermes",
+                "helper",
+                "--source",
+                str(source),
+                "--profile",
+                "default",
+                "--runtime",
+                "pi",
+                "--path",
+                str(destination),
+            )
+            inspected = self.invoke(*arguments)
+            self.assertEqual(inspected.returncode, 0, inspected.stderr)
+            self.assertEqual(json.loads(inspected.stdout)["status"], "inspected")
+            self.assertFalse(destination.exists())
+            applied = self.invoke(*arguments, "--allow-partial", "--apply")
+            self.assertEqual(applied.returncode, 0, applied.stderr)
+            self.assertEqual(json.loads(applied.stdout)["status"], "imported")
+            self.assertEqual(
+                (destination / ".runtime/hermes/config.yaml").read_bytes(), raw
+            )
+
     def test_without_yaml_ordinary_create_works_and_import_is_actionable(self):
         with tempfile.TemporaryDirectory(dir=TEMP_ROOT) as tmp:
             result = subprocess.run(
