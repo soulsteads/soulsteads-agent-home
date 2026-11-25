@@ -102,6 +102,15 @@ identity-file reading instruction; its exact original bytes are also preserved
 privately in `.runtime/hermes/AGENTS.md`. Other imported core documents keep their
 original bytes.
 
+`memory.user_profile_enabled: false` excludes `USER.md`, and
+`memory.memory_enabled: false` excludes `MEMORY.md`, independently. Inspection
+and apply skip reading the corresponding source document at every supported
+location, including workspace fallback. The new Home keeps its generic template
+for each skipped document; this does not set the destination runtime's memory
+policy. Absent flags default to enabled. Boolean values, `0`/`1`, and the text
+forms `true`/`false`, `yes`/`no`, and `on`/`off` are accepted. An unrecognized
+value stops the import before context is read, without echoing the value.
+
 The importer does not follow `terminal.cwd` automatically. A configured path is
 not permission to inspect an unrelated workspace. Only supported root identity
 files are considered from an explicit workspace, not its projects or Vaults.

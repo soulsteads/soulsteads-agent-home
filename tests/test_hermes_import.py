@@ -489,6 +489,78 @@ class HermesImportTests(unittest.TestCase):
         )
         self.assertIn("AGENTS.md", receipt["private_files"])
 
+    def test_disabled_context_is_never_read_during_inspection(self):
+        workspace = self.root / "workspace"
+        workspace.mkdir(mode=0o700)
+        memories = self.source / "memories"
+        memories.mkdir(mode=0o700)
+        for folder in (self.source, memories, workspace):
+            for filename in ("USER.md", "MEMORY.md"):
+                (folder / filename).write_text(f"Synthetic {folder.name} {filename}\n")
+        for setting, disabled, enabled, value in (
+            ("user_profile_enabled", "USER.md", "MEMORY.md", "false"),
+            ("memory_enabled", "MEMORY.md", "USER.md", '" OFF "'),
+        ):
+            with self.subTest(setting=setting):
+                (self.source / "config.yaml").write_text(f"memory:\n  {setting}: {value}\n")
+                with patch.object(
+                    hermes_import.Snapshot, "read", autospec=True,
+                    side_effect=hermes_import.Snapshot.read,
+                ) as read:
+                    report = inspect_source("helper", self.source, workspace=workspace)
+                read_names = {call.args[1].name for call in read.call_args_list}
+                self.assertNotIn(disabled, read_names)
+                self.assertNotIn(disabled, report["files"])
+                self.assertIn(enabled, read_names)
+                self.assertIn(enabled, report["files"])
+
+    @unittest.skipUnless(
+        sys.platform == "linux", "Atomic import publication requires Linux"
+    )
+    def test_apply_keeps_templates_instead_of_disabled_source_context(self):
+        (self.source / "config.yaml").write_text(
+            "memory:\n  memory_enabled: false\n  user_profile_enabled: false\n"
+        )
+        workspace = self.root / "workspace"
+        workspace.mkdir(mode=0o700)
+        memories = self.source / "memories"
+        memories.mkdir(mode=0o700)
+        canary = "SYNTHETIC_DISABLED_CONTEXT_NOT_FOR_IMPORT"
+        for folder in (self.source, memories, workspace):
+            for filename in ("USER.md", "MEMORY.md"):
+                (folder / filename).write_text(canary)
+        import_profile(
+            "helper", self.source, path=self.destination, workspace=workspace,
+            allow_partial=True,
+        )
+        receipt = json.loads(
+            (self.destination / ".runtime/hermes/IMPORT-RECEIPT.json").read_text()
+        )
+        for filename in ("USER.md", "MEMORY.md"):
+            with self.subTest(filename=filename):
+                self.assertNotIn(filename, receipt["files"])
+                self.assertNotIn(canary, (self.destination / filename).read_text())
+                tracked = subprocess.check_output(
+                    ["git", "-C", str(self.destination), "show", f"HEAD:{filename}"],
+                    text=True,
+                )
+                self.assertNotIn(canary, tracked)
+
+    def test_invalid_context_flag_is_rejected_before_document_reads(self):
+        for setting, value in (
+            ("memory_enabled", "[false]"),
+            ("user_profile_enabled", "INVALID_SYNTHETIC_VALUE"),
+        ):
+            with self.subTest(setting=setting):
+                (self.source / "config.yaml").write_text(f"memory:\n  {setting}: {value}\n")
+                with patch.object(
+                    hermes_import.Snapshot, "read", autospec=True,
+                    side_effect=hermes_import.Snapshot.read,
+                ) as read, self.assertRaisesRegex(ImportErrorSafe, rf"memory\.{setting}") as error:
+                    inspect_source("helper", self.source)
+                self.assertEqual([call.args[1].name for call in read.call_args_list], ["config.yaml"])
+                self.assertNotIn("INVALID_SYNTHETIC_VALUE", str(error.exception))
+
     def test_source_change_or_optional_file_appearance_prevents_publication(self):
 
         original = core.create
