@@ -212,10 +212,11 @@ private. The import report/receipt belongs there too, not in tracked agent files
 
 For the selected profile's `config.yaml` only, the importer accepts PyYAML safe
 scalar, sequence, and mapping anchors/aliases when they expand within the import
-limits. It also accepts the YAML merge key (`<<`) from one mapping or a sequence
-of mappings. Explicit local mapping keys override merged keys, regardless of their
-source order. Duplicate explicit keys are refused, and merge sources that provide
-the same key are refused as ambiguous—even when their values happen to match.
+limits. Each mapping may have one YAML merge key (`<<`), whose value is one
+mapping or a standard YAML sequence of mappings. Explicit local mapping keys
+override merged keys, regardless of source order. Duplicate keys are refused,
+and merge sources that provide the same key are refused as ambiguous—even when
+their values happen to match.
 
 Aliases remain refused in skill frontmatter and every other importer YAML load.
 Custom/unsafe tags, undefined or recursive aliases, non-mapping merge sources,

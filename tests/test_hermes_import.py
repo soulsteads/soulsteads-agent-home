@@ -323,8 +323,10 @@ class HermesImportTests(unittest.TestCase):
         raw = (
             b"skill-defaults: &skill-defaults\n"
             b"  disabled: [disabled-skill]\n"
+            b"platform-defaults: &platform-defaults\n"
+            b"  platform_disabled: {}\n"
             b"skills:\n"
-            b"  <<: *skill-defaults\n"
+            b"  <<: [*skill-defaults, *platform-defaults]\n"
             b"model: &disabled false\n"
             b"model-copy: *disabled\n"
         )
@@ -358,6 +360,10 @@ class HermesImportTests(unittest.TestCase):
 
     def test_config_alias_rejections_publish_nothing(self):
         cases = {
+            "tagged-merge-sequence": b"skills:\n  <<: !fixture [{disabled: []}]\n",
+            "duplicate-merge-key": (
+                b"skills:\n  <<: {disabled: []}\n  <<: {platform_disabled: {}}\n"
+            ),
             "recursive": b"loop: &loop [*loop]\n",
             "undefined": b"value: *SYNTHETIC_ALIAS_MARKER\n",
             "conflicting-merges": (
