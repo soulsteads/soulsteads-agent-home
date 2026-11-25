@@ -506,6 +506,29 @@ def _skills(selected, config, snap, platform, unsupported):
     return result
 
 
+def _disabled_context_documents(config):
+    memory = config.get("memory", {})
+    if not isinstance(memory, dict):
+        raise ImportErrorSafe("Hermes memory settings must be a mapping")
+    disabled = set()
+    for key, filename in (
+        ("user_profile_enabled", "USER.md"),
+        ("memory_enabled", "MEMORY.md"),
+    ):
+        value = memory.get(key, True)
+        if type(value) in (int, bool):
+            value = str(int(value))
+        elif isinstance(value, str):
+            value = value.strip().lower()
+        else:
+            value = None
+        if value in ("0", "false", "no", "off"):
+            disabled.add(filename)
+        elif value not in ("1", "true", "yes", "on"):
+            raise ImportErrorSafe(f"Hermes memory.{key} must be a boolean setting")
+    return disabled
+
+
 def _plan(
     name,
     source,
@@ -531,11 +554,14 @@ def _plan(
     snap.directory(selected)
     config_raw = snap.read(selected / "config.yaml")
     config = _yaml(config_raw or b"{}", allow_aliases=True)
+    disabled_context = _disabled_context_documents(config)
     documents = {}
     workspace = _absolute(workspace) if workspace is not None else None
     if workspace:
         snap.directory(workspace)
     for filename in ("SOUL.md", "AGENTS.md", "USER.md", "MEMORY.md"):
+        if filename in disabled_context:
+            continue
         raw = snap.read(selected / filename)
         if raw is None and workspace and filename != "MEMORY.md":
             raw = snap.read(workspace / filename)
