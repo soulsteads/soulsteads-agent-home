@@ -44,6 +44,7 @@ def _validate_config_aliases(yaml, root):
         return
     safe_tags = set(yaml.SafeLoader.yaml_constructors) - {None}
     map_tag = yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG
+    seq_tag = yaml.resolver.BaseResolver.DEFAULT_SEQUENCE_TAG
     str_tag = "tag:yaml.org,2002:str"
     merge_tag = "tag:yaml.org,2002:merge"
     logical_nodes = 0
@@ -55,6 +56,8 @@ def _validate_config_aliases(yaml, root):
         if isinstance(node, yaml.nodes.MappingNode) and node.tag == map_tag:
             return [node]
         if isinstance(node, yaml.nodes.SequenceNode):
+            if node.tag != seq_tag:
+                fail("YAML merge requires a standard sequence tag")
             if not all(
                 isinstance(item, yaml.nodes.MappingNode) and item.tag == map_tag
                 for item in node.value
@@ -92,8 +95,12 @@ def _validate_config_aliases(yaml, root):
                 return None
 
             explicit, merged = set(), set()
+            has_merge = False
             for key_node, value_node in node.value:
                 if key_node.tag == merge_tag:
+                    if has_merge:
+                        fail("duplicate YAML merge key")
+                    has_merge = True
                     for source in merge_sources(value_node):
                         source_keys = visit(source, depth + 1, active)
                         if merged.intersection(source_keys):
