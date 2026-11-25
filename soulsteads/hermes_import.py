@@ -11,12 +11,16 @@ import secrets
 import shutil
 import stat
 from pathlib import Path
+from typing import NoReturn
 
 from . import core
 
 MAX_FILE = 2 * 1024 * 1024
 MAX_TOTAL = 64 * 1024 * 1024
 MAX_ENTRIES = 10000
+MAX_YAML_EVENTS = 20000
+MAX_YAML_DEPTH = 40
+MAX_YAML_LOGICAL_NODES = 100000
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 
 
@@ -34,18 +38,123 @@ def require_yaml():
     return yaml
 
 
-def _yaml(raw):
+def _validate_config_aliases(yaml, root):
+    """Validate YAML aliases as a bounded logical tree before construction."""
+    if root is None:
+        return
+    safe_tags = set(yaml.SafeLoader.yaml_constructors) - {None}
+    map_tag = yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG
+    str_tag = "tag:yaml.org,2002:str"
+    merge_tag = "tag:yaml.org,2002:merge"
+    logical_nodes = 0
+
+    def fail(message) -> NoReturn:
+        raise ImportErrorSafe(message)
+
+    def merge_sources(node):
+        if isinstance(node, yaml.nodes.MappingNode) and node.tag == map_tag:
+            return [node]
+        if isinstance(node, yaml.nodes.SequenceNode):
+            if not all(
+                isinstance(item, yaml.nodes.MappingNode) and item.tag == map_tag
+                for item in node.value
+            ):
+                fail("YAML merge source must be a mapping")
+            return list(node.value)
+        fail("YAML merge source must be a mapping")
+
+    def visit(node, depth, active):
+        nonlocal logical_nodes
+        logical_nodes += 1
+        if logical_nodes > MAX_YAML_LOGICAL_NODES:
+            fail("YAML alias expansion exceeds import limit")
+        if depth > MAX_YAML_DEPTH:
+            fail("YAML nesting exceeds import limit")
+        if id(node) in active:
+            fail("recursive YAML aliases are not supported")
+        if node.tag not in safe_tags:
+            fail("unsupported YAML tag")
+        if isinstance(node, yaml.nodes.ScalarNode):
+            return None
+
+        active.add(id(node))
+        try:
+            if isinstance(node, yaml.nodes.SequenceNode):
+                for item in node.value:
+                    visit(item, depth + 1, active)
+                return None
+            if not isinstance(node, yaml.nodes.MappingNode):
+                fail("invalid YAML node")
+            if node.tag != map_tag:
+                for key_node, value_node in node.value:
+                    visit(key_node, depth + 1, active)
+                    visit(value_node, depth + 1, active)
+                return None
+
+            explicit, merged = set(), set()
+            for key_node, value_node in node.value:
+                if key_node.tag == merge_tag:
+                    for source in merge_sources(value_node):
+                        source_keys = visit(source, depth + 1, active)
+                        if merged.intersection(source_keys):
+                            fail("ambiguous YAML merge keys")
+                        merged.update(source_keys)
+                    continue
+                if (
+                    not isinstance(key_node, yaml.nodes.ScalarNode)
+                    or key_node.tag != str_tag
+                ):
+                    fail("invalid or duplicate YAML mapping key")
+                visit(key_node, depth + 1, active)
+                if key_node.value in explicit:
+                    fail("invalid or duplicate YAML mapping key")
+                explicit.add(key_node.value)
+                visit(value_node, depth + 1, active)
+            return merged | explicit
+        finally:
+            active.remove(id(node))
+
+    visit(root, 1, set())
+
+
+def _yaml(raw, *, allow_aliases=False):
     yaml = require_yaml()
+
+    if len(raw) > MAX_FILE:
+        raise ImportErrorSafe("YAML input exceeds import limit")
 
     class StrictLoader(yaml.SafeLoader):
         pass
 
     def mapping(loader, node):
         result = {}
+        explicit, merges, entries = set(), [], []
         for key_node, value_node in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                if not allow_aliases:
+                    raise ImportErrorSafe("YAML aliases or excessive nodes are not supported")
+                if isinstance(value_node, yaml.nodes.MappingNode):
+                    merges.append([value_node])
+                elif isinstance(value_node, yaml.nodes.SequenceNode):
+                    merges.append(value_node.value)
+                else:
+                    raise ImportErrorSafe("YAML merge source must be a mapping")
+                continue
             key = loader.construct_object(key_node)
-            if not isinstance(key, str) or key in result:
+            if not isinstance(key, str) or key in explicit:
                 raise ImportErrorSafe("invalid or duplicate YAML mapping key")
+            explicit.add(key)
+            entries.append((key, value_node))
+        for sources in merges:
+            for source in sources:
+                merged = loader.construct_object(source)
+                if not isinstance(merged, dict):
+                    raise ImportErrorSafe("YAML merge source must be a mapping")
+                for key, value in merged.items():
+                    if not isinstance(key, str) or key in result:
+                        raise ImportErrorSafe("ambiguous YAML merge keys")
+                    result[key] = value
+        for key, value_node in entries:
             result[key] = loader.construct_object(value_node)
         return result
 
@@ -55,7 +164,9 @@ def _yaml(raw):
     try:
         depth = 0
         for count, event in enumerate(yaml.parse(raw), 1):
-            if count > 20000 or isinstance(event, yaml.events.AliasEvent):
+            if count > MAX_YAML_EVENTS or (
+                isinstance(event, yaml.events.AliasEvent) and not allow_aliases
+            ):
                 raise ImportErrorSafe(
                     "YAML aliases or excessive nodes are not supported"
                 )
@@ -67,8 +178,12 @@ def _yaml(raw):
                 event, (yaml.events.MappingEndEvent, yaml.events.SequenceEndEvent)
             ):
                 depth -= 1
-            if depth > 40:
+            if depth > MAX_YAML_DEPTH:
                 raise ImportErrorSafe("YAML nesting exceeds import limit")
+        if allow_aliases:
+            _validate_config_aliases(
+                yaml, yaml.compose(raw, Loader=yaml.SafeLoader)
+            )
         value = yaml.load(raw, Loader=StrictLoader)
         if value is None:
             value = {}
@@ -408,7 +523,7 @@ def _plan(
     snap = Snapshot()
     snap.directory(selected)
     config_raw = snap.read(selected / "config.yaml")
-    config = _yaml(config_raw or b"{}")
+    config = _yaml(config_raw or b"{}", allow_aliases=True)
     documents = {}
     workspace = _absolute(workspace) if workspace is not None else None
     if workspace:
