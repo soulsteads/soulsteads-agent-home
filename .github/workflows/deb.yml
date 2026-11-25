@@ -28,6 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           scripts/build-deb.sh --out-dir "$RUNNER_TEMP/deb"
+          python3 -B tests/test_debian_versions.py
       - name: Upload Debian binary package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

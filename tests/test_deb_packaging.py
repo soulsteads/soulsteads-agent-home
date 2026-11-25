@@ -5,17 +5,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import tomllib
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "scripts" / "build-deb.sh"
 DPKG_DEB = os.environ.get("DPKG_DEB") or shutil.which("dpkg-deb")
-
-with (ROOT / "pyproject.toml").open("rb") as source:
-    VERSION = tomllib.load(source)["project"]["version"]
-
 
 @unittest.skipUnless(shutil.which("uv") and DPKG_DEB, "requires uv and dpkg-deb")
 class DebianPackageTests(unittest.TestCase):
@@ -36,11 +31,13 @@ class DebianPackageTests(unittest.TestCase):
                 timeout=180,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            packages = list(out_dir.glob(f"soulsteads-agent-home_{VERSION}_all.deb"))
+            packages = list(out_dir.glob("soulsteads-agent-home_*_all.deb"))
             self.assertEqual(len(packages), 1)
             control = subprocess.check_output([dpkg_deb, "-f", str(packages[0])], text=True)
             self.assertIn("Package: soulsteads-agent-home", control)
-            self.assertIn(f"Version: {VERSION}", control)
+            version = subprocess.check_output([dpkg_deb, "-f", str(packages[0]), "Version"], text=True).strip()
+            filename_version = version.replace(":", "%3a")
+            self.assertEqual(packages[0].name, f"soulsteads-agent-home_{filename_version}_all.deb")
             self.assertIn("Maintainer: Soulsteads", control.splitlines())
             self.assertIn("Depends: python3 (>= 3.11), git", control)
             self.assertIn("Recommends: python3-yaml, python3-tomlkit, python3-secretstorage", control)
