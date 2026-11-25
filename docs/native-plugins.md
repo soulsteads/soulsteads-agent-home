@@ -50,7 +50,8 @@ codex plugin add soulsteads-agent-home@soulsteads-local
 ```
 
 In a fresh session, select `soulsteads-agent-home:soulsteads-home-status` from
-the skill picker and specify the Home, for example `helper`. Use
+the skill picker and specify the Home, for example `helper`. Codex does not
+advertise this skill to the model for automatic selection. Use
 `codex plugin remove soulsteads-agent-home@soulsteads-local` to uninstall it.
 
 ### Pi

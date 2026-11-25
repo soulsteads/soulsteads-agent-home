@@ -49,6 +49,13 @@ class NativePluginPackagesTest(unittest.TestCase):
         self.assertEqual(package["pi"], {"skills": ["./skills"]})
         self.assertEqual(package["exports"], {".": "./index.js"})
 
+    def test_codex_skill_disables_implicit_invocation(self):
+        policy = PLUGIN / "skills" / SKILL / "agents/openai.yaml"
+        self.assertTrue(policy.is_file(), "Codex requires per-skill invocation metadata")
+        self.assertEqual(policy.read_text(encoding="utf-8").splitlines(), [
+            "policy:", "  allow_implicit_invocation: false",
+        ])
+
     def skill_command(self, home):
         skill = (PLUGIN / "skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")
         command = re.search(r"`(soulsteads verify [^`]+)`", skill)
