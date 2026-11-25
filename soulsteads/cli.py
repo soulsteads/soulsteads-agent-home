@@ -192,10 +192,17 @@ def parser():
     commit.add_argument(
         "-m", "--message", help="Commit message (default: local changed-file count)"
     )
+    commit.add_argument(
+        "--workspace-file",
+        action="append",
+        default=[],
+        metavar="WORKSPACE/PATH",
+        help="Include one exact workspace file or tracked deletion; repeat as needed",
+    )
     log = commands.add_parser("log", help="Show local agent file history")
     log.add_argument("agent")
     revert = commands.add_parser(
-        "revert", help="Restore an older tracked snapshot as a new commit"
+        "revert", help="Restore managed Home files, excluding workspace files, as a new commit"
     )
     revert.add_argument("agent")
     revert.add_argument("revision")
@@ -738,7 +745,13 @@ def main(argv=None):
                 manifest = settings_report(manifest)
             print(json.dumps(manifest, indent=2))
         elif args.command == "commit":
-            print(core.commit(agent_path(args.agent, args.agents_dir), args.message))
+            print(
+                core.commit(
+                    agent_path(args.agent, args.agents_dir),
+                    args.message,
+                    workspace_files=args.workspace_file,
+                )
+            )
         elif args.command == "revert":
             print(core.revert(agent_path(args.agent, args.agents_dir), args.revision))
         elif args.command == "run":

@@ -10,6 +10,7 @@ import shutil
 import stat
 import subprocess
 from collections.abc import Callable
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Final
 
@@ -21,6 +22,8 @@ class HomeError(Exception):
 _NAME: Final = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _PERSONA_FILES: Final = ("USER.md", "SOUL.md", "AGENTS.md", "MEMORY.md")
 _SECRET_NAMES: Final = {".env", "credentials", "credential", "secrets", "secret"}
+_MAX_WORKSPACE_FILE: Final = 64 * 1024 * 1024
+_WorkspaceFile = tuple[list[tuple[int, int, int, int]], os.stat_result | None, int | None]
 
 
 def _error(message: str) -> None:
@@ -76,19 +79,27 @@ def _render(runtime: str) -> dict[str, str]:
 def _git(
     home: Path, *args: str, check: bool = True
 ) -> subprocess.CompletedProcess[str]:
-    environment = os.environ.copy()
-    for key in list(environment):
-        if key.startswith("GIT_"):
-            environment.pop(key)
+    result = _git_bytes(home, *args, check=check)
+    return subprocess.CompletedProcess(
+        result.args, result.returncode, os.fsdecode(result.stdout), os.fsdecode(result.stderr)
+    )
+
+
+def _git_bytes(
+    home: Path, *args: str, check: bool = True, input: bytes | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+    }
     result = subprocess.run(
         ["git", "-C", str(home), "-c", "core.hooksPath=/dev/null", *args],
-        text=True,
+        input=input,
         capture_output=True,
         check=False,
         env=environment,
     )
     if check and result.returncode:
-        raise HomeError(result.stderr.strip() or "Git command failed")
+        raise HomeError(os.fsdecode(result.stderr).strip() or "Git command failed")
     return result
 
 
@@ -208,7 +219,29 @@ def _secret_path(path: Path) -> bool:
     )
 
 
+def _workspace_file_path(path: str) -> bool:
+    """Recognize a canonical, non-private workspace path, without filesystem I/O."""
+    if not isinstance(path, str) or not path.startswith("workspace/"):
+        return False
+    parts = path.split("/")
+    return (
+        not any(part in {"", ".", ".."} for part in parts)
+        and not any(ord(char) < 32 or ord(char) == 127 or char == "\\" for char in path)
+        and not _secret_path(Path(path))
+        and not any(
+            part.lower().startswith(("credentials", "secrets"))
+            or part.lower() in {
+                ".git", ".gitmodules", ".gitattributes", ".runtime", ".cache",
+                "sessions", ".claude", ".codex", ".opencode", ".pi", ".agents",
+            }
+            for part in parts[1:]
+        )
+    )
+
+
 def _allowed_path(path: str) -> bool:
+    if path.startswith("workspace/"):
+        return False
     candidate = _safe_relative(path)
     if _secret_path(candidate):
         return False
@@ -226,7 +259,7 @@ def _allowed_path(path: str) -> bool:
             *_PERSONA_FILES,
             "soulsteads.json",
             ".gitignore",
-            "workspace/.gitkeep",
+
             ".mcp.json",
             ".pi/mcp.json",
             "LEARNING.md",
@@ -238,6 +271,7 @@ def _allowed_path(path: str) -> bool:
             *SKILL_LINKS,
         }
         or candidate.parts[0] == "skills"
+
     )
 
 
@@ -257,29 +291,166 @@ def _assert_no_worktree_hardlinks(home: Path) -> None:
             _error(f"hardlinked worktree file is not allowed: {entry}")
 
 
-def commit(home: Path, message: str | None = None) -> str:
-    """Explicitly commit only the narrow, safe identity allowlist."""
+def _open_workspace_file(home: Path, path: str, lifetime: ExitStack) -> _WorkspaceFile:
+    """Bind the lexical Home-to-leaf chain, including a tracked deletion's absence."""
+    from .hermes_import import _open_dir
+    from .publication import _identity
+
+    parts = path.split("/")
+    try:
+        with ExitStack() as dirs:
+            directory, chain = _open_dir(home)
+            dirs.callback(os.close, directory)
+            for part in parts[:-1]:
+                try:
+                    directory = os.open(
+                        part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory
+                    )
+                except FileNotFoundError:
+                    return chain, None, None
+                dirs.callback(os.close, directory)
+                info = os.fstat(directory)
+                chain.append((info.st_dev, info.st_ino, info.st_mode, info.st_uid))
+                try:
+                    os.stat(".git", dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    _error("workspace selection crosses a nested Git repository")
+            leaf = parts[-1]
+            try:
+                info = os.stat(leaf, dir_fd=directory, follow_symlinks=False)
+            except FileNotFoundError:
+                return chain, None, None
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                _error("workspace selection must be a regular single-link file")
+            if info.st_size > _MAX_WORKSPACE_FILE:
+                _error("workspace file exceeds the 64 MiB limit")
+            fd = os.open(leaf, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            lifetime.callback(os.close, fd)
+            if _identity(os.fstat(fd)) != _identity(info):
+                _error("workspace selection changed while opening")
+            return chain, info, fd
+    except OSError as exc:
+        raise HomeError("cannot safely open workspace selection") from exc
+
+
+def _read_workspace_file(fd: int, info: os.stat_result) -> bytes:
+    from .publication import _identity
+
+    # A bounded read protects against growth after the pre-open size check.
+    with os.fdopen(os.dup(fd), "rb") as source:
+        data = source.read(info.st_size + 1)
+    if len(data) != info.st_size or _identity(os.fstat(fd)) != _identity(info):
+        _error("workspace selection changed while reading")
+    return data
+
+
+def _verify_workspace_files(home: Path, files: dict[str, _WorkspaceFile]) -> None:
+    from .publication import _identity
+
+    for path, (chain, info, fd) in files.items():
+        try:
+            with ExitStack() as binding:
+                current_chain, current, _ = _open_workspace_file(home, path, binding)
+                if current_chain == chain:
+                    if info is None and current is None:
+                        continue
+                    if (
+                        info is not None
+                        and current is not None
+                        and fd is not None
+                        and _identity(info) == _identity(current) == _identity(os.fstat(fd))
+                    ):
+                        continue
+        except HomeError as exc:
+            raise HomeError("workspace selection changed before commit") from exc
+        _error("workspace selection changed before commit")
+
+
+def _staged_names(home: Path) -> list[str]:
+    return _git(
+        home, "diff", "--cached", "--no-renames", "--ignore-submodules=none",
+        "--name-only", "-z",
+    ).stdout.split("\0")[:-1]
+
+
+def commit(
+    home: Path,
+    message: str | None = None,
+    *,
+    workspace_files: tuple[str, ...] | list[str] = (),
+) -> str:
+    """Commit the identity allowlist and any workspace files selected for this commit."""
     home = Path(home)
     _validate_home(home)
     if message is not None and (not isinstance(message, str) or not message.strip()):
         _error("commit message must not be empty")
-    _assert_regular_tree(home, home_links=True)
-    staged = _git(home, "diff", "--cached", "--name-only", "-z").stdout.split("\0")[:-1]
-    if any(not _allowed_path(path) for path in staged):
+    selected = set(workspace_files)
+    if any(not _workspace_file_path(path) for path in selected):
+        _error("workspace selection must be a non-private Home-relative file path")
+    with ExitStack() as lifetime:
+        files = {path: _open_workspace_file(home, path, lifetime) for path in sorted(selected)}
+        return _commit_selected(home, message, files)
+
+
+def _commit_selected(home: Path, message: str | None, files: dict[str, _WorkspaceFile]) -> str:
+    selected = files.keys()
+    tracked: set[str] = set()
+    if selected:
+        tracked = set(_git(
+            home, "ls-tree", "-rz", "--name-only", "HEAD", "--", "workspace/"
+        ).stdout.split("\0")[:-1])
+    exists = {path for path, (_, info, _) in files.items() if info is not None}
+    if selected - exists - tracked:
+        _error("workspace selection does not name an existing or tracked file")
+
+    def allowed(path: str) -> bool:
+        return path in selected or _allowed_path(path)
+
+    if any(not allowed(path) for path in _staged_names(home)):
         _error("index contains unsafe paths")
     candidates = _git(
         home, "ls-files", "--cached", "--others", "--exclude-standard", "-z"
     ).stdout.split("\0")[:-1]
+    if exists and any(
+        path.startswith(file + "/") or file.startswith(path + "/")
+        for file in exists for path in tracked
+    ):
+        _error("workspace selection would replace a tracked file or directory; record deletions first")
     paths = sorted({path for path in candidates if _allowed_path(path)})
-    if not paths:
+    if not paths and not selected:
         _error("no safe agent files to commit")
-    _git(home, "add", "-A", "--", *paths)
-    staged = _git(home, "diff", "--cached", "--name-only", "-z").stdout.split("\0")[:-1]
-    if not staged or any(not _allowed_path(path) for path in staged):
+    index_records = []
+    zero = ""
+    if selected - exists:
+        zero = "0" * len(_git(home, "rev-parse", "HEAD").stdout.strip())
+    for path, (_, info, fd) in files.items():
+        if info is None:
+            mode, oid = "0", zero
+        else:
+            # Hash admitted bytes, not a pathname Git would reopen or filter.
+            assert fd is not None
+            mode = "100755" if info.st_mode & stat.S_IXUSR else "100644"
+            oid = _git_bytes(
+                home, "hash-object", "-w", "--stdin", input=_read_workspace_file(fd, info)
+            ).stdout.decode("ascii").strip()
+        index_records.append(os.fsencode(f"{mode} {oid}\t{path}\0"))
+    _verify_workspace_files(home, files)
+    if paths:
+        _git(home, "--literal-pathspecs", "add", "-A", "--", *paths)
+    if index_records:
+        _verify_workspace_files(home, files)
+        _git_bytes(home, "update-index", "-z", "--index-info", input=b"".join(index_records))
+    staged = _staged_names(home)
+    if not staged:
+        _error("no changes to commit")
+    if any(not allowed(path) for path in staged):
         _error("index contains unsafe paths")
     if message is None:
         noun = "file" if len(staged) == 1 else "files"
         message = f"Update agent home ({len(staged)} {noun})"
+    _verify_workspace_files(home, files)
     _git(home, "commit", "-m", message)
     return _git(home, "rev-parse", "HEAD").stdout.strip()
 
@@ -291,6 +462,7 @@ def history(home: Path) -> str:
 
 
 def revert(home: Path, revision: str) -> str:
+    """Restore the managed Home snapshot without writing into the workspace."""
     home = Path(home)
     _validate_home(home)
     if not isinstance(revision, str) or not re.fullmatch(
@@ -307,6 +479,8 @@ def revert(home: Path, revision: str) -> str:
     for entry in tree:
         mode, _, remainder = entry.partition(" ")
         _, _, name = remainder.partition("\t")
+        if name == "workspace" or name.startswith("workspace/"):
+            continue
         from .runtimes import SKILL_LINKS
 
         if mode == "120000":
@@ -319,35 +493,23 @@ def revert(home: Path, revision: str) -> str:
             _error("historical tree contains unsupported file modes")
         if not _allowed_path(name):
             _error("historical tree contains unsafe paths")
-    changed = _git(home, "diff", "--name-only", "-z", revision, "HEAD").stdout.split(
-        "\0"
-    )[:-1]
-    if any(
-        not _allowed_path(name) and name != "workspace/.gitkeep" for name in changed
-    ):
+    # Exclude workspace paths from the actual patch, not just the preflight list.
+    managed = ("--", ".", ":(top,exclude)workspace")
+    changed = _git(
+        home, "diff", "--no-renames", "--ignore-submodules=none", "--name-only", "-z",
+        revision, "HEAD", *managed,
+    ).stdout.split("\0")[:-1]
+    if any(not _allowed_path(name) for name in changed):
         _error("historical tree contains unsafe paths")
     if not changed:
-        _error("revision is already checked out")
-    patch = _git(home, "diff", "--binary", revision, "HEAD").stdout
-    applied = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(home),
-            "-c",
-            "core.hooksPath=/dev/null",
-            "apply",
-            "--reverse",
-            "--index",
-        ],
-        input=patch,
-        text=True,
-        capture_output=True,
-        check=False,
-        env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
-    )
+        _error("no managed Home changes to restore; that snapshot is already checked out")
+    patch = _git_bytes(
+        home, "diff", "--binary", "--no-renames", "--no-ext-diff", "--no-textconv",
+        revision, "HEAD", *managed,
+    ).stdout
+    applied = _git_bytes(home, "apply", "--reverse", "--index", input=patch, check=False)
     if applied.returncode:
-        raise HomeError(f"cannot restore revision: {applied.stderr.strip()}")
+        raise HomeError(f"cannot restore revision: {os.fsdecode(applied.stderr).strip()}")
     _git(home, "commit", "-m", f"Restore {revision}")
     return _git(home, "rev-parse", "HEAD").stdout.strip()
 

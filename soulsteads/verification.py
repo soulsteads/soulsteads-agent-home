@@ -300,10 +300,14 @@ def verify_home(home, probe_versions=False, *, check_credentials=True):
         tracked = core._git(
             home, "-c", "core.fsmonitor=false", "ls-files", "-z"
         ).stdout.split("\0")[:-1]
-        unsafe = any(
-            core._secret_path(Path(path)) or Path(path).parts[0] == ".runtime"
-            for path in tracked
-        )
+        def private_path(path: str) -> bool:
+            return (
+                core._secret_path(Path(path))
+                or Path(path).parts[0] == ".runtime"
+                or (path.startswith("workspace/") and not core._workspace_file_path(path))
+            )
+
+        unsafe = any(private_path(path) for path in tracked)
         probes = (
             ".env",
             ".env.local",
@@ -341,10 +345,7 @@ def verify_home(home, probe_versions=False, *, check_credentials=True):
             "--exclude-standard",
             "-z",
         ).stdout.split("\0")[:-1]
-        unsafe |= any(
-            core._secret_path(Path(path)) or Path(path).parts[0] == ".runtime"
-            for path in untracked
-        )
+        unsafe |= any(private_path(path) for path in untracked)
         add(
             "private-storage",
             "failed" if unsafe or not ignored else "passed",
