@@ -63,6 +63,23 @@ This is an early release. Supported settings and native behavior vary by
 harness and version. For a source archive, wheel, or recovery steps, see the
 [standalone installation guide](docs/installation.md).
 
+### Debian package
+
+For Debian 13 or later, build a binary package from a clean checkout with
+`uv` and `dpkg-deb` available. This does not install the package or activate a
+service:
+
+```sh
+scripts/build-deb.sh --out-dir ./dist/debian
+```
+
+The command builds the wheel from source, installs its payload under
+`/usr/lib/python3/dist-packages` in `soulsteads-agent-home`, generates the
+`/usr/bin/soulsteads` entry point, and smoke-tests an extracted package from an
+isolated `HOME` and `PYTHONPATH`. The package depends on Python 3.11+ and Git;
+its
+Hermes, settings, and Linux vault extras are Debian `Recommends`.
+
 ## Create an agent
 
 ```sh
