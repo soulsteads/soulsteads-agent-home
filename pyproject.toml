@@ -34,4 +34,5 @@ soulsteads = [
     "assets/native-plugins/plugins/*/package.json",
     "assets/native-plugins/plugins/*/index.js",
     "assets/native-plugins/plugins/*/skills/*/SKILL.md",
+    "assets/native-plugins/plugins/*/skills/*/agents/openai.yaml",
 ]
